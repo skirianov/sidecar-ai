@@ -167,7 +167,8 @@ export class AddonManager {
             requestMode: addon.requestMode || 'standalone',
             aiProvider: addon.aiProvider || 'openai',
             aiModel: addon.aiModel || 'gpt-3.5-turbo',
-            apiKey: addon.apiKey || '',
+            apiKey: addon.apiKey || '', // API key is required - validated in form
+            apiUrl: addon.apiUrl || '', // Optional custom URL
             resultFormat: addon.resultFormat || 'collapsible',
             responseLocation: addon.responseLocation || 'outsideChatlog',
             contextSettings: {

@@ -342,23 +342,7 @@
     white-space: nowrap;
 }
 
-.add_ons_api_key_row {
-    display: flex;
-    gap: 8px;
-    align-items: stretch;
-}
-
-.add_ons_api_key_row .text_pole {
-    flex: 1;
-    min-width: 0; /* Allow flex item to shrink below content size */
-}
-
-.add_ons_api_key_row .menu_button {
-    flex-shrink: 0;
-    height: auto;
-    align-self: center;
-    white-space: nowrap;
-}
+/* API key row - simplified since button removed */
 
 .add_ons_form_checkboxes {
     display: flex;

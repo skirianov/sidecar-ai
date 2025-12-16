@@ -177,12 +177,6 @@ export class SettingsUI {
             self.loadModelsForProvider($(this).val());
         });
 
-        // Use ST API Key button
-        $(document).off('click.sidecar', '#add_ons_use_st_key').on('click.sidecar', '#add_ons_use_st_key', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            self.loadAPIKeyFromST();
-        });
     }
 
     openModal(addonId = null) {
@@ -607,23 +601,23 @@ export class SettingsUI {
             if (extSettings.connectionManager && extSettings.connectionManager.profiles) {
                 console.log('[Sidecar AI] Checking connection manager profiles');
                 const profiles = extSettings.connectionManager.profiles;
-                
+
                 for (const profile of profiles) {
                     // Match by API provider - check profile.api which contains the provider identifier
                     // For OpenRouter, profile.api might be something like "openrouter" or a full identifier
                     const profileApi = profile.api || '';
                     const profileSource = profile['chat_completion_source'] || '';
-                    
+
                     // Check if this profile matches our provider
                     // profile.api might be like "openrouter" or a full API identifier
                     const matchesProvider = profileApi.toLowerCase().includes(provider.toLowerCase()) ||
-                                         profileSource.toLowerCase() === provider.toLowerCase() ||
-                                         (provider === 'openrouter' && profileApi.toLowerCase().includes('openrouter'));
-                    
+                        profileSource.toLowerCase() === provider.toLowerCase() ||
+                        (provider === 'openrouter' && profileApi.toLowerCase().includes('openrouter'));
+
                     if (matchesProvider && profile['secret-id']) {
                         const secretId = profile['secret-id'];
                         console.log(`[Sidecar AI] Found profile with secret-id: ${secretId}`);
-                        
+
                         // Resolve secret-id to actual API key from secret_state
                         // secret_state structure: { 'api_key_openrouter': [{id, value, label, active}, ...] }
                         if (typeof window !== 'undefined' && window.secret_state) {
@@ -639,7 +633,7 @@ export class SettingsUI {
                                 }
                             }
                         }
-                        
+
                         // Also check context.secret_state if available
                         if (!apiKey && this.context && this.context.secret_state) {
                             for (const [key, secrets] of Object.entries(this.context.secret_state)) {
@@ -653,7 +647,7 @@ export class SettingsUI {
                                 }
                             }
                         }
-                        
+
                         if (apiKey) break;
                     }
                 }
@@ -790,6 +784,14 @@ export class SettingsUI {
             return;
         }
 
+        // Validate API key is provided
+        const apiKey = $('#add_ons_form_api_key').val();
+        if (!apiKey || apiKey.trim() === '') {
+            alert('API Key is required. Please enter your API key.');
+            $('#add_ons_form_api_key').focus();
+            return;
+        }
+
         const formData = {
             id: $('#add_ons_form_id').val(),
             name: $('#add_ons_form_name').val(),
@@ -799,8 +801,8 @@ export class SettingsUI {
             requestMode: $('#add_ons_form_request_mode').val(),
             aiProvider: $('#add_ons_form_ai_provider').val(),
             aiModel: $('#add_ons_form_ai_model').val(),
-            apiKey: $('#add_ons_form_api_key').val(),
-            apiUrl: $('#add_ons_form_api_url').val(),
+            apiKey: apiKey.trim(), // Required - save trimmed value
+            apiUrl: $('#add_ons_form_api_url').val()?.trim() || '', // Optional
             resultFormat: $('#add_ons_form_result_format').val(),
             responseLocation: $('#add_ons_form_response_location').val(),
             contextSettings: {
@@ -819,10 +821,14 @@ export class SettingsUI {
 
         try {
             if (formData.id) {
+                if (formData.id) {
                 this.addonManager.updateAddon(formData.id, formData);
             } else {
                 this.addonManager.createAddon(formData);
             }
+
+            // Ensure settings are saved (API keys persist in extension settings)
+            await this.addonManager.saveAddons();
 
             this.closeModal();
             this.refreshSettings();

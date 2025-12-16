@@ -109,12 +109,9 @@
 
                 <div class="add_ons_form_row" id="add_ons_api_key_row">
                     <div class="add_ons_form_group" style="grid-column: 1 / -1;">
-                        <label for="add_ons_form_api_key">API Key (Optional)</label>
-                        <div class="add_ons_api_key_row">
-                            <input type="password" id="add_ons_form_api_key" name="apiKey" class="text_pole" placeholder="Leave empty to use SillyTavern's configured key">
-                            <button type="button" class="menu_button add_ons_button_small" id="add_ons_use_st_key" title="Use API key from SillyTavern's API Connection settings">Use ST Key</button>
-                        </div>
-                        <small class="add_ons_form_hint">If left empty, will use the API key configured in SillyTavern's API Connection settings for this provider</small>
+                        <label for="add_ons_form_api_key">API Key *</label>
+                        <input type="password" id="add_ons_form_api_key" name="apiKey" class="text_pole" required placeholder="Enter your API key">
+                        <small class="add_ons_form_hint">API key is saved securely in extension settings</small>
                     </div>
                 </div>
 
