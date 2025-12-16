@@ -17,12 +17,13 @@ export class SettingsUI {
     }
 
     initDrawer() {
-        // Handle drawer toggle if needed
+        // Handle drawer toggle - use instant toggle instead of animation for better performance
         $('#sidecar_ai_settings .inline-drawer-toggle').off('click').on('click', function () {
             const content = $(this).next('.inline-drawer-content');
             const icon = $(this).find('.inline-drawer-icon');
-            content.slideToggle();
-            icon.toggleClass('down');
+            const isVisible = content.is(':visible');
+            content.toggle(!isVisible);
+            icon.toggleClass('down', !isVisible);
         });
     }
 

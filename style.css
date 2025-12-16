@@ -44,7 +44,12 @@
 #sidecar_ai_settings .inline-drawer-content {
     padding: 10px;
     border-top: 1px solid var(--sidecar-border);
-    display: block; 
+    display: block;
+    transition: none !important;
+}
+
+#sidecar_ai_settings .inline-drawer-content[style*="display: none"] {
+    display: none !important;
 }
 
 /* Add-ons List */
@@ -145,8 +150,9 @@
 }
 
 .add_ons_modal_content {
-    background: var(--SmartThemeBodyColor, #1e1e1e); /* Fallback to ST var */
-    border: 1px solid var(--SmartThemeBorderColor, #ccc);
+    background: var(--SmartThemeBodyColor) !important;
+    color: inherit !important;
+    border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 10px;
     width: 90%;
     max-width: 700px;
@@ -156,12 +162,17 @@
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
 
+.add_ons_modal_header h3 {
+    color: inherit !important;
+}
+
 .add_ons_modal_header {
     padding: 15px;
     border-bottom: 1px solid var(--SmartThemeBorderColor, #ccc);
     display: flex;
     justify-content: space-between;
     align-items: center;
+    background: var(--SmartThemeBodyColor) !important;
 }
 
 .add_ons_modal_header h3 {
@@ -184,6 +195,8 @@
 .add_ons_modal_body {
     padding: 20px;
     overflow-y: auto;
+    background: var(--SmartThemeBodyColor) !important;
+    color: inherit !important;
 }
 
 .add_ons_modal_footer {
@@ -192,6 +205,7 @@
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+    background: var(--SmartThemeBodyColor) !important;
 }
 
 /* Form Styles */
@@ -204,6 +218,7 @@
     margin-bottom: 5px;
     font-weight: bold;
     font-size: 0.9em;
+    color: inherit !important;
 }
 
 /* Fallback for text_pole if not available - Scoped */
@@ -212,9 +227,9 @@
     width: 100%;
     padding: 8px;
     box-sizing: border-box;
-    background-color: rgba(0, 0, 0, 0.1);
-    border: 1px solid var(--SmartThemeBorderColor, #ccc);
-    color: inherit;
+    background-color: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.1)) !important;
+    border: 1px solid var(--SmartThemeBorderColor, #ccc) !important;
+    color: inherit !important;
     border-radius: 4px;
 }
 
