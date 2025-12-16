@@ -156,10 +156,12 @@ export class SettingsUI {
 
         // Variable insertion buttons removed - no longer needed
 
-        // Provider change - load models
+        // Provider change - load models and check for saved API key
         $(document).off('change.sidecar', '#add_ons_form_ai_provider').on('change.sidecar', '#add_ons_form_ai_provider', function (e) {
             e.stopPropagation();
-            self.loadModelsForProvider($(this).val());
+            const provider = $(this).val();
+            self.loadModelsForProvider(provider);
+            self.checkAndPrefillAPIKey(provider);
         });
 
         // Test Connection button
@@ -167,6 +169,17 @@ export class SettingsUI {
             e.preventDefault();
             e.stopPropagation();
             self.testConnection();
+        });
+
+        // Clear "Using saved key" placeholder when user starts typing
+        $(document).off('focus.sidecar input.sidecar', '#add_ons_form_api_key').on('focus.sidecar input.sidecar', '#add_ons_form_api_key', function (e) {
+            const $field = $(this);
+            if ($field.val() === 'Using saved key from SillyTavern') {
+                $field.val('');
+                $field.removeAttr('data-using-st-key');
+                $field.css('font-style', 'normal');
+                $field.css('color', '');
+            }
         });
 
     }
@@ -191,8 +204,11 @@ export class SettingsUI {
             $('#add_ons_form_id').val('');
             $('#add_ons_modal_title').text('Create New Sidecar');
             $('#add_ons_form_save').text('Create Sidecar');
-            // Load models for default provider
-            setTimeout(() => this.loadModelsForProvider('openai'), 100);
+            // Load models for default provider and check for saved API key
+            setTimeout(() => {
+                this.loadModelsForProvider('openai');
+                this.checkAndPrefillAPIKey('openai');
+            }, 100);
         }
 
         // FORCE dark theme colors from actual computed styles
@@ -556,6 +572,37 @@ export class SettingsUI {
         $('#add_ons_form')[0].reset();
     }
 
+    /**
+     * Check if API key exists in SillyTavern settings and prefill form
+     */
+    checkAndPrefillAPIKey(provider) {
+        if (!provider || !this.aiClient) {
+            return;
+        }
+
+        const apiKeyField = $('#add_ons_form_api_key');
+        const currentValue = apiKeyField.val();
+
+        // Don't override if user has already entered something
+        if (currentValue && currentValue.trim() !== '' && currentValue !== 'Using saved key from SillyTavern') {
+            return;
+        }
+
+        // Check if ST has API key configured
+        const stApiKey = this.aiClient.getProviderApiKey(provider);
+        if (stApiKey) {
+            apiKeyField.val('Using saved key from SillyTavern');
+            apiKeyField.attr('data-using-st-key', 'true');
+            apiKeyField.css('font-style', 'italic');
+            apiKeyField.css('color', 'var(--SmartThemeBodyColor, #9fc)');
+        } else {
+            apiKeyField.val('');
+            apiKeyField.removeAttr('data-using-st-key');
+            apiKeyField.css('font-style', 'normal');
+            apiKeyField.css('color', '');
+        }
+    }
+
     populateForm(addon) {
         $('#add_ons_form_id').val(addon.id);
         $('#add_ons_form_name').val(addon.name);
@@ -564,7 +611,18 @@ export class SettingsUI {
         $('#add_ons_form_trigger_mode').val(addon.triggerMode);
         $('#add_ons_form_request_mode').val(addon.requestMode);
         $('#add_ons_form_ai_provider').val(addon.aiProvider);
-        $('#add_ons_form_api_key').val(addon.apiKey || '');
+        
+        // Handle API key - if addon has one, use it; otherwise check ST's saved key
+        if (addon.apiKey && addon.apiKey.trim() !== '') {
+            $('#add_ons_form_api_key').val(addon.apiKey);
+            $('#add_ons_form_api_key').removeAttr('data-using-st-key');
+            $('#add_ons_form_api_key').css('font-style', 'normal');
+            $('#add_ons_form_api_key').css('color', '');
+        } else {
+            // Check for ST's saved key
+            this.checkAndPrefillAPIKey(addon.aiProvider);
+        }
+        
         $('#add_ons_form_api_url').val(addon.apiUrl || '');
         $('#add_ons_form_result_format').val(addon.resultFormat);
         $('#add_ons_form_response_location').val(addon.responseLocation);
@@ -606,8 +664,24 @@ export class SettingsUI {
             return;
         }
 
-        if (!apiKey) {
-            alert('Please enter an API Key first.');
+        // Get API key - check if using ST's saved key or user-entered key
+        let apiKey = $('#add_ons_form_api_key').val();
+        const apiKeyField = $('#add_ons_form_api_key');
+        const isUsingSTKey = apiKeyField.attr('data-using-st-key') === 'true' || apiKey === 'Using saved key from SillyTavern';
+        
+        // If using ST's saved key, get it from ST settings
+        if (isUsingSTKey) {
+            if (this.aiClient) {
+                apiKey = this.aiClient.getProviderApiKey(provider);
+            } else {
+                apiKey = null;
+            }
+        } else {
+            apiKey = apiKey.trim();
+        }
+
+        if (!apiKey || apiKey.trim() === '') {
+            alert('Please enter an API Key or configure it in SillyTavern\'s API Connection settings.');
             $('#add_ons_form_api_key').focus();
             this.highlightError('#add_ons_form_api_key');
             return;
@@ -684,10 +758,22 @@ export class SettingsUI {
             return;
         }
 
-        // Validate API key is provided
-        const apiKey = $('#add_ons_form_api_key').val();
+        // Get API key - check if using ST's saved key or user-entered key
+        let apiKey = $('#add_ons_form_api_key').val();
+        const isUsingSTKey = $('#add_ons_form_api_key').attr('data-using-st-key') === 'true';
+        
+        // If using ST's saved key, get it from ST settings
+        if (isUsingSTKey || apiKey === 'Using saved key from SillyTavern') {
+            if (this.aiClient) {
+                apiKey = this.aiClient.getProviderApiKey(provider);
+            }
+        } else {
+            apiKey = apiKey.trim();
+        }
+        
+        // Validate API key is available
         if (!apiKey || apiKey.trim() === '') {
-            alert('API Key is required. Please enter your API key.');
+            alert('API Key is required. Please enter your API key or configure it in SillyTavern\'s API Connection settings.');
             $('#add_ons_form_api_key').focus();
             this.highlightError('#add_ons_form_api_key');
             return;
@@ -725,6 +811,19 @@ export class SettingsUI {
             // Connection test passed, proceed with save
             saveButton.text('Saving...');
 
+            // Determine if we're using ST's key or a custom key
+            const apiKeyField = $('#add_ons_form_api_key');
+            const fieldValue = apiKeyField.val();
+            const isUsingSTKey = apiKeyField.attr('data-using-st-key') === 'true' || 
+                                 fieldValue === 'Using saved key from SillyTavern';
+            
+            // Get actual API key for saving
+            let savedApiKey = '';
+            if (!isUsingSTKey && fieldValue && fieldValue.trim() !== '') {
+                savedApiKey = fieldValue.trim();
+            }
+            // If using ST key, save empty string (we'll fetch from ST when needed)
+
             const formData = {
                 id: $('#add_ons_form_id').val(),
                 name: $('#add_ons_form_name').val(),
@@ -734,7 +833,7 @@ export class SettingsUI {
                 requestMode: $('#add_ons_form_request_mode').val(),
                 aiProvider: provider,
                 aiModel: model,
-                apiKey: apiKey.trim(), // Required - save trimmed value
+                apiKey: savedApiKey, // Save empty if using ST key, otherwise save the entered key
                 apiUrl: apiUrl || '', // Optional
                 resultFormat: $('#add_ons_form_result_format').val(),
                 responseLocation: $('#add_ons_form_response_location').val(),

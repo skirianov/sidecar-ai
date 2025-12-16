@@ -345,16 +345,16 @@ export class AIClient {
     async testConnection(provider, model, apiKey, apiUrl = null) {
         try {
             const chatCompletionSource = this.getChatCompletionSource(provider);
-            
+
             // List of providers that block browser requests (CORS)
             const corsBlockingProviders = ['deepseek', 'anthropic', 'google', 'cohere'];
             const isCorsBlocking = corsBlockingProviders.includes(provider.toLowerCase());
-            
+
             // Try ChatCompletionService first (avoids CORS issues, uses server-side requests)
             // This is especially important for providers like Deepseek that block browser requests
             if (this.context && this.context.ChatCompletionService) {
                 console.log(`[Sidecar AI] Testing connection via ChatCompletionService: ${provider} (${model})`);
-                
+
                 try {
                     const testMessages = [{ role: 'user', content: 'test' }];
 
@@ -379,7 +379,7 @@ export class AIClient {
                     return { success: true, message: 'Connection successful' };
                 } catch (chatServiceError) {
                     console.warn('[Sidecar AI] ChatCompletionService test failed:', chatServiceError);
-                    
+
                     // For CORS-blocking providers, don't fall back to direct API
                     if (isCorsBlocking) {
                         const errorMsg = chatServiceError.message || String(chatServiceError);
@@ -414,7 +414,7 @@ export class AIClient {
             if (!apiKey && !this.context?.ChatCompletionService) {
                 throw new Error('No API key provided and ChatCompletionService not available');
             }
-            
+
             throw new Error('Unable to test connection - please configure provider in SillyTavern API Connection settings');
         } catch (error) {
             console.error('[Sidecar AI] Connection test failed:', error);
