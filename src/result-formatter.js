@@ -1467,8 +1467,20 @@ export class ResultFormatter {
                         
                         // Check if block already exists
                         const existingBlock = messageElement.querySelector(`.addon_section-${addon.id}`);
-                        if (!existingBlock && addon.responseLocation === 'outsideChatlog') {
-                            // Restore the dropdown block
+                        
+                        if (existingBlock) {
+                            // Block exists but might be hidden - show it
+                            const container = existingBlock.closest('.sidecar-container');
+                            if (container) {
+                                if (container.style.display === 'none') {
+                                    container.style.display = ''; // Show it
+                                    restoredCount++;
+                                    console.log(`[Sidecar AI] Showed existing sidecar for ${addon.name} from variant ${swipeId}`);
+                                }
+                                this.markContainerAsRestored(container);
+                            }
+                        } else if (addon.responseLocation === 'outsideChatlog') {
+                            // Block doesn't exist - restore it
                             const formatted = this.formatResult(addon, stored.result, message, true);
                             const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
                             if (success) {
