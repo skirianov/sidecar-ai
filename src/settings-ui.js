@@ -549,7 +549,7 @@ export class SettingsUI {
         modal.show();
     }
 
-    loadModelsForProvider(provider, retryCount = 0) {
+    async loadModelsForProvider(provider, retryCount = 0) {
         const modelSelect = $('#add_ons_form_ai_model');
         const maxRetries = 3;
         const minModelsExpected = provider === 'openrouter' ? 10 : 1;
@@ -560,7 +560,8 @@ export class SettingsUI {
         }
 
         // Try to get models - if we don't find any, retry after a delay (dropdown might not be populated yet)
-        let models = this.getProviderModels(provider);
+        // Now using await as getProviderModels can perform API calls
+        let models = await this.getProviderModels(provider);
 
         // For OpenRouter, if we got very few models, retry a few times
         // The dropdown might still be loading from SillyTavern
@@ -605,7 +606,7 @@ export class SettingsUI {
         }, 100);
     }
 
-    getProviderModels(provider) {
+    async getProviderModels(provider) {
         let models = [];
         console.log('[Sidecar AI] ========== Loading models for provider:', provider, '==========');
 
@@ -1053,6 +1054,30 @@ export class SettingsUI {
             }
         }
 
+        // STRATEGY 4: Fetch directly from OpenRouter API
+        if (provider === 'openrouter' && models.length === 0) {
+            try {
+                console.log('[Sidecar AI] Strategy 4: Attempting to fetch OpenRouter models directly from API...');
+                const response = await fetch('https://openrouter.ai/api/v1/models');
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data && data.data && Array.isArray(data.data)) {
+                        console.log(`[Sidecar AI] Fetched ${data.data.length} models from OpenRouter API`);
+                        data.data.forEach(m => {
+                            models.push({
+                                value: m.id,
+                                label: m.name || m.id,
+                                default: false
+                            });
+                        });
+                        return models;
+                    }
+                }
+            } catch (e) {
+                console.error('[Sidecar AI] Failed to fetch OpenRouter models:', e);
+            }
+        }
+
         // Method 4: Fallback to default models if nothing found
         if (models.length === 0) {
             console.log('[Sidecar AI] Using fallback models for provider:', provider);
@@ -1199,10 +1224,8 @@ export class SettingsUI {
         $('#add_ons_form_format_style').val(addon.formatStyle || 'html-css');
 
         // Load models for provider, then set selected model
-        this.loadModelsForProvider(addon.aiProvider);
-        setTimeout(() => {
-            $('#add_ons_form_ai_model').val(addon.aiModel);
-        }, 200);
+        await this.loadModelsForProvider(addon.aiProvider);
+        $('#add_ons_form_ai_model').val(addon.aiModel);
 
         const ctx = addon.contextSettings || {};
         $('#add_ons_form_messages_count').val(ctx.messagesCount || 10);
@@ -2516,7 +2539,7 @@ Return ONLY the JSON object, properly formatted.`;
 
             // For OpenRouter, validate model against real models list to avoid placeholders
             if (provider?.toLowerCase() === 'openrouter') {
-                const realModels = this.getProviderModels('openrouter');
+                const realModels = await this.getProviderModels('openrouter');
                 if (realModels && realModels.length > 0) {
                     // Check if current model exists in real models list
                     const modelExists = realModels.some(m => {
