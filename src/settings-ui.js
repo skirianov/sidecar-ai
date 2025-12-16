@@ -680,12 +680,12 @@ export class SettingsUI {
                         }
                     });
 
-                    // For OpenRouter, if we got very few models (5 or less), don't return yet
-                    // Continue to check other selectors to get the full list
+                    // For OpenRouter, always continue to check window.openRouterModels for the full list
+                    // For other providers, return if we found models
                     if (models.length > 0) {
-                        if (provider === 'openrouter' && models.length <= 5) {
-                            console.log(`[Sidecar AI] OpenRouter dropdown only has ${models.length} models, continuing to check other selectors...`);
-                            // Don't return yet, continue to check other selectors
+                        if (provider === 'openrouter') {
+                            console.log(`[Sidecar AI] OpenRouter dropdown has ${models.length} models, continuing to check window.openRouterModels for full list...`);
+                            // Don't return yet, continue to check window.openRouterModels which is more reliable
                             // Keep models found so far, we'll use the best source later
                         } else {
                             console.log('[Sidecar AI] Successfully stole models from UI:', models.length);
