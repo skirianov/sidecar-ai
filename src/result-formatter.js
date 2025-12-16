@@ -229,7 +229,7 @@ export class ResultFormatter {
         try {
             // Always find the latest AI message element, not just any message
             const messageElement = this.findAIMessageElement();
-            
+
             if (!messageElement) {
                 console.warn(`[Sidecar AI] AI message element not found for loading indicator. Waiting...`);
                 // Retry after a short delay in case the AI message is still rendering
@@ -266,7 +266,7 @@ export class ResultFormatter {
     attachLoadingToElement(messageElement, addon) {
         // Get message ID from the element
         const elementId = messageElement.id || messageElement.getAttribute('data-message-id') || `msg_${Date.now()}`;
-        
+
         // Get or create Sidecar container for this message
         let sidecarContainer = messageElement.querySelector(`.sidecar-container`);
         if (!sidecarContainer) {
@@ -307,7 +307,7 @@ export class ResultFormatter {
     findAIMessageElement() {
         // Get all message elements
         const messageElements = document.querySelectorAll('.mes, .message');
-        
+
         // Search backwards to find the latest AI message
         for (let i = messageElements.length - 1; i >= 0; i--) {
             const element = messageElements[i];
@@ -368,7 +368,7 @@ export class ResultFormatter {
             }
 
             const elementId = messageElement.id || messageElement.getAttribute('data-message-id') || `msg_${Date.now()}`;
-            
+
             let sidecarContainer = messageElement.querySelector(`.sidecar-container`);
             if (!sidecarContainer) {
                 sidecarContainer = document.createElement('div');

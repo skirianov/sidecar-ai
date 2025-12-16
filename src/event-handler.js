@@ -148,18 +148,18 @@ export class EventHandler {
             }
 
             console.log('[Sidecar AI] Processing auto-triggered add-ons for AI message');
-            
+
             // Wait a bit to ensure AI message is fully rendered in DOM
             // This prevents loading indicators from attaching to wrong message
             await new Promise(resolve => setTimeout(resolve, 300));
-            
+
             // Re-get the latest AI message to ensure we have the correct one
             const aiMessage = this.getLatestMessage();
             if (!aiMessage) {
                 console.warn('[Sidecar AI] Could not find AI message after delay, skipping');
                 return;
             }
-            
+
             // Process add-ons with the confirmed AI message
             await this.processAddons(autoAddons, aiMessage);
         } catch (error) {
