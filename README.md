@@ -1,5 +1,7 @@
 # SillyTavern Sidecar AI Add-Ons
 
+**Version:** 0.1.0
+
 A SillyTavern extension that allows you to define custom "add-on" prompts (like critiques, comments, interviews, etc.) that execute using cheaper AI models instead of your main expensive model. This helps reduce costs by routing auxiliary processing tasks to more affordable AI providers.
 
 ## Features
