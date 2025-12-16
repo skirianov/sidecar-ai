@@ -182,8 +182,8 @@ async function loadModules() {
         // Initialize dropdown UI for outsideChatlog results
         initializeDropdownUI();
 
-        // Add manual trigger button to chat UI
-        addManualTriggerButton(eventHandler);
+        // Add "Run Sidecar" to Extensions menu
+        addSidecarToExtensionsMenu(eventHandler);
 
         // Export for manual triggering
         window.addOnsExtension = {
@@ -234,61 +234,85 @@ async function loadModules() {
         }, 500);
     }
 
-    function addManualTriggerButton(eventHandler) {
-        // Wait for chat UI to be ready
+    function addSidecarToExtensionsMenu(eventHandler) {
+        // Wait for Extensions menu to be ready
         setTimeout(() => {
-            const sendButtonContainer = document.querySelector('#send_form') ||
-                document.querySelector('.send_form') ||
-                document.querySelector('#send_container');
-
-            if (!sendButtonContainer) {
-                console.warn('[Sidecar AI] Send button container not found, manual trigger button not added');
+            const extensionsMenu = document.querySelector('#extensionsMenu');
+            
+            if (!extensionsMenu) {
+                console.warn('[Sidecar AI] Extensions menu not found, retrying...');
+                setTimeout(() => addSidecarToExtensionsMenu(eventHandler), 1000);
                 return;
             }
 
-            // Check if button already exists
-            if (document.getElementById('add_ons_trigger_button')) {
+            // Check if menu item already exists
+            if (document.getElementById('sidecar_wand_container')) {
                 return;
             }
 
-            // Create trigger button
-            const triggerButton = document.createElement('button');
-            triggerButton.id = 'add_ons_trigger_button';
-            triggerButton.className = 'add_ons_trigger_button';
-            triggerButton.type = 'button';
-            triggerButton.innerHTML = '<i class="fa-solid fa-bolt"></i> Run Sidecar';
-            triggerButton.title = 'Trigger manual sidecar prompts';
+            // Create container for our menu item
+            const sidecarContainer = document.createElement('div');
+            sidecarContainer.id = 'sidecar_wand_container';
+            sidecarContainer.className = 'extension_container';
 
-            triggerButton.addEventListener('click', async () => {
-                triggerButton.disabled = true;
-                triggerButton.textContent = 'Processing...';
+            // Create menu item matching SillyTavern's format
+            const menuItem = document.createElement('div');
+            menuItem.className = 'list-group-item flex-container flexGap5';
+            menuItem.style.cursor = 'pointer';
+            menuItem.title = 'Run manual sidecar prompts';
+            
+            menuItem.innerHTML = `
+                <div class="extensionsMenuExtensionButton fa-solid fa-bolt"></div>
+                Run Sidecar
+            `;
+
+            menuItem.addEventListener('click', async () => {
+                // Disable during processing
+                const originalHTML = menuItem.innerHTML;
+                menuItem.style.opacity = '0.5';
+                menuItem.style.pointerEvents = 'none';
+                menuItem.innerHTML = `
+                    <div class="extensionsMenuExtensionButton fa-solid fa-spinner fa-spin"></div>
+                    Processing...
+                `;
 
                 try {
                     await eventHandler.triggerAddons();
-                    triggerButton.textContent = 'Done!';
+                    menuItem.innerHTML = `
+                        <div class="extensionsMenuExtensionButton fa-solid fa-check"></div>
+                        Done!
+                    `;
                     setTimeout(() => {
-                        triggerButton.innerHTML = '<i class="fa-solid fa-bolt"></i> Run Sidecar';
-                        triggerButton.disabled = false;
+                        menuItem.innerHTML = originalHTML;
+                        menuItem.style.opacity = '1';
+                        menuItem.style.pointerEvents = 'auto';
                     }, 2000);
                 } catch (error) {
                     console.error('[Sidecar AI] Error triggering add-ons:', error);
-                    triggerButton.textContent = 'Error';
+                    menuItem.innerHTML = `
+                        <div class="extensionsMenuExtensionButton fa-solid fa-exclamation-triangle"></div>
+                        Error
+                    `;
                     setTimeout(() => {
-                        triggerButton.innerHTML = '<i class="fa-solid fa-bolt"></i> Run Sidecar';
-                        triggerButton.disabled = false;
+                        menuItem.innerHTML = originalHTML;
+                        menuItem.style.opacity = '1';
+                        menuItem.style.pointerEvents = 'auto';
                     }, 2000);
                 }
             });
 
-            // Insert before send button or at end of container
-            if (sendButtonContainer.querySelector('button[type="submit"]')) {
-                sendButtonContainer.insertBefore(triggerButton, sendButtonContainer.querySelector('button[type="submit"]'));
+            sidecarContainer.appendChild(menuItem);
+            
+            // Append to extensions menu (add near the end, before translate)
+            const translateContainer = document.querySelector('#translate_wand_container');
+            if (translateContainer && translateContainer.parentNode) {
+                translateContainer.parentNode.insertBefore(sidecarContainer, translateContainer);
             } else {
-                sendButtonContainer.appendChild(triggerButton);
+                extensionsMenu.appendChild(sidecarContainer);
             }
 
-            console.log('[Sidecar AI] Manual trigger button added');
-        }, 1000);
+            console.log('[Sidecar AI] Added "Run Sidecar" to Extensions menu');
+        }, 1500);
     }
 
 })();
