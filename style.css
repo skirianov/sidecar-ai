@@ -127,16 +127,36 @@
     border: 1px solid var(--SmartThemeBorderColor);
     font-size: 0.9em;
     white-space: nowrap;
+    /* Ensure text is readable - inherit from theme */
+    color: inherit;
 }
 
 .add_ons_badge_enabled {
-    color: #4cd137;
-    border-color: #4cd137;
+    color: #ffffff !important;
+    background: #28a745 !important;
+    border-color: #28a745 !important;
+    font-weight: 600;
 }
 
 .add_ons_badge_disabled {
-    color: #e84118;
-    border-color: #e84118;
+    color: #ffffff !important;
+    background: #dc3545 !important;
+    border-color: #dc3545 !important;
+    font-weight: 600;
+}
+
+.add_ons_badge_auto {
+    color: #ffffff !important;
+    background: #28a745 !important;
+    border-color: #28a745 !important;
+    font-weight: 600;
+}
+
+.add_ons_badge_manual {
+    color: #000000 !important;
+    background: #ffc107 !important;
+    border-color: #ffc107 !important;
+    font-weight: 600;
 }
 
 .add_ons_item_description {
@@ -291,6 +311,26 @@
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+}
+
+/* AI Maker modal footer - max 3 buttons per row */
+#add_ons_ai_maker_modal .add_ons_modal_footer {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    justify-content: stretch;
+}
+
+@media (max-width: 768px) {
+    #add_ons_ai_maker_modal .add_ons_modal_footer {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 480px) {
+    #add_ons_ai_maker_modal .add_ons_modal_footer {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* Form */

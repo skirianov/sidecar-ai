@@ -90,7 +90,7 @@ export class SettingsUI {
                         <h4>${addon.name || 'Unnamed Sidecar'}</h4>
                         <span class="add_ons_item_meta">
                             ${enabledBadge}
-                            <span class="add_ons_badge">${addon.triggerMode || 'auto'}</span>
+                            <span class="add_ons_badge add_ons_badge_${(addon.triggerMode || 'auto') === 'auto' ? 'auto' : 'manual'}">${addon.triggerMode || 'auto'}</span>
                             <span class="add_ons_badge">${addon.requestMode || 'standalone'}</span>
                             <span class="add_ons_badge">${addon.responseLocation || 'outsideChatlog'}</span>
                             ${addon.formatStyle && addon.formatStyle !== 'html-css' ? `<span class="add_ons_badge" title="Format Style">${addon.formatStyle}</span>` : ''}
@@ -2345,7 +2345,7 @@ Generate a complete sidecar configuration following this exact structure (return
   "name": "[Emoji] [Descriptive Name]",
   "description": "[Brief description of what this sidecar does]",
   "prompt": "[CRITICAL: Instruction for AI to analyze chat/story content - include example output format]",
-  "triggerMode": "manual" or "auto",
+  "triggerMode": "auto" (default) or "manual",
   "requestMode": "standalone",
   "aiProvider": "openai",
   "aiModel": "gpt-4o-mini",
@@ -2377,7 +2377,7 @@ EXAMPLE TEMPLATE (for reference):
   "name": "🎬 Director's Commentary",
   "description": "Provides meta-analysis like DVD commentary",
   "prompt": "Provide director's commentary on the last message (as if analyzing a film scene):\n\n🎬 **Scene Analysis:**\n[What's happening on a meta level - narrative techniques, character beats, foreshadowing]\n\n**Notable Techniques:**\n- [Technique 1]: [How it's used]\n- [Technique 2]: [How it's used]\n\nKeep it insightful but concise. Focus on craft, not just plot summary.",
-  "triggerMode": "manual",
+  "triggerMode": "auto",
   "requestMode": "standalone",
   "aiProvider": "openai",
   "aiModel": "gpt-4o-mini",
@@ -2397,7 +2397,7 @@ EXAMPLE TEMPLATE (for reference):
 
 OTHER GUIDELINES:
 - Choose appropriate emoji for the sidecar name
-- Set triggerMode "auto" for continuous tracking/analysis, "manual" for on-demand analysis
+- Set triggerMode "auto" (default) for continuous tracking/analysis, "manual" for on-demand analysis
 - Choose formatStyle: "html-css" for styled output, "markdown" for simple text, "beautify" for creative
 - Set messagesCount: 2-5 for immediate context, 10-20 for broader analysis, 20-30 for patterns
 - includeCharCard: true if analyzing character behavior/personality

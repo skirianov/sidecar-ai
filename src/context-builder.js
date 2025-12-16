@@ -101,13 +101,19 @@ export class ContextBuilder {
             parts.push('- Structure content with clear visual hierarchy.');
             parts.push('- Make it visually appealing while maintaining readability.');
             parts.push('');
-            parts.push('COLOR & ACCESSIBILITY REQUIREMENTS:');
-            parts.push('- CRITICAL: All colors MUST meet WCAG AA contrast ratio standards (minimum 4.5:1 for normal text, 3:1 for large text).');
-            parts.push('- Choose visually pleasing, harmonious color palettes (complementary or analogous colors).');
-            parts.push('- Ensure high contrast between text and backgrounds for readability.');
-            parts.push('- Light text on dark backgrounds: Use #ffffff, #f0f0f0, #e8e8e8 (contrast > 12:1).');
-            parts.push('- Dark text on light backgrounds: Use #000000, #1a1a1a, #2d2d2d (contrast > 12:1).');
-            parts.push('- Avoid low-contrast combinations (light gray on white, dark gray on black).');
+            parts.push('⚠️ CRITICAL COLOR & ACCESSIBILITY REQUIREMENTS (WCAG AA MANDATORY - STRICT ENFORCEMENT):');
+            parts.push('- MANDATORY: All text colors MUST have minimum 4.5:1 contrast ratio with their background (WCAG AA standard).');
+            parts.push('- NEVER use light gray (#aaa, #bbb, #ccc, #ddd, #eee, #f0f0f0, #f5f5f5) on light backgrounds - this FAILS WCAG.');
+            parts.push('- NEVER use dark gray (#444, #555, #666, #777, #888) on dark backgrounds - this FAILS WCAG.');
+            parts.push('- FOR LIGHT BACKGROUNDS: Use DARK text colors: #000000, #1a1a1a, #2d2d2d, #333333 (contrast > 12:1).');
+            parts.push('- FOR DARK BACKGROUNDS: Use LIGHT text colors: #ffffff, #f0f0f0, #e8e8e8, #dddddd (contrast > 12:1).');
+            parts.push('- FOR COLORED BACKGROUNDS: If background is light (e.g., #f5f5f5, #e8e8e8, #fff3cd), use DARK text (#000, #1a1a1a, #333).');
+            parts.push('- FOR COLORED BACKGROUNDS: If background is dark (e.g., #2d2d2d, #1a1a1a, #343a40), use LIGHT text (#fff, #f0f0f0, #e8e8e8).');
+            parts.push('- NEVER use rgba() with low opacity for text - always use solid colors with proper contrast.');
+            parts.push('- If you use colored backgrounds (purple, yellow, blue, etc.), ensure text is either pure white (#ffffff) or pure black (#000000) for maximum contrast.');
+            parts.push('- TEST: Light gray text on pastel backgrounds = FAIL. Dark gray text on dark backgrounds = FAIL.');
+            parts.push('- REMEMBER: Better to use high-contrast colors than fail accessibility standards.');
+            parts.push('- Choose visually pleasing, harmonious color palettes BUT ONLY if they meet contrast requirements.');
             parts.push('');
             parts.push('STYLE CONSISTENCY RULES:');
             if (context.addonHistory) {
@@ -125,6 +131,10 @@ export class ContextBuilder {
             parts.push('- For avatars: Use emoji avatars (e.g., 🎭, 👤, 🤖) OR initials in colored circles.');
             parts.push('- Initials example: <div style="width:40px;height:40px;border-radius:50%;background:#5e72e4;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">AB</div>');
             parts.push('- Choose background colors that have high contrast with white text (dark, saturated colors work best).');
+            parts.push('- Example good contrast: Dark blue (#1e3a8a) background with white (#ffffff) text = PASS.');
+            parts.push('- Example bad contrast: Light gray (#e0e0e0) background with light gray (#aaa) text = FAIL.');
+            parts.push('- Example good contrast: Dark blue (#1e3a8a) background with white (#ffffff) text = PASS.');
+            parts.push('- Example bad contrast: Light gray (#e0e0e0) background with light gray (#aaa) text = FAIL.');
             parts.push('');
         } else if (formatStyle === 'markdown') {
             parts.push('FORMAT AS MARKDOWN:');
