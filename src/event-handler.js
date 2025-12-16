@@ -24,14 +24,22 @@ export class EventHandler {
                 // Listen for new messages
                 if (event_types.MESSAGE_RECEIVED) {
                     eventSource.on(event_types.MESSAGE_RECEIVED, (data) => {
-                        this.handleMessageReceived(data);
+                        try {
+                            this.handleMessageReceived(data);
+                        } catch (error) {
+                            console.error('[Add-Ons Extension] Error in MESSAGE_RECEIVED handler:', error);
+                        }
                     });
                 }
 
                 // Alternative event names
                 if (event_types.MESSAGE_SENT) {
                     eventSource.on(event_types.MESSAGE_SENT, (data) => {
-                        this.handleMessageReceived(data);
+                        try {
+                            this.handleMessageReceived(data);
+                        } catch (error) {
+                            console.error('[Add-Ons Extension] Error in MESSAGE_SENT handler:', error);
+                        }
                     });
                 }
 
@@ -42,6 +50,7 @@ export class EventHandler {
             }
         } catch (error) {
             console.error('[Add-Ons Extension] Error registering listeners:', error);
+            console.error('[Add-Ons Extension] Error details:', error.message, error);
             this.setupFallbackListeners();
         }
     }
