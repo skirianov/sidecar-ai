@@ -660,30 +660,18 @@ export class AIClient {
 
                     console.log(`[Sidecar AI] Found matching profile! secretId: ${secretId}, secretKey: ${secretKey}`);
 
-                    if (secretKey && secretState && secretState[secretKey]) {
-                        // Check secret_state for the matching secret ID
-                        const secrets = secretState[secretKey];
-                        console.log(`[Sidecar AI] Found secrets array for ${secretKey}:`, Array.isArray(secrets) ? secrets.length : 'not an array');
-
-                        if (Array.isArray(secrets)) {
-                            const secret = secrets.find(s => s.id === secretId);
-                            console.log(`[Sidecar AI] Found secret by ID:`, !!secret, secret ? { hasValue: !!secret.value, hasLabel: !!secret.label } : null);
-
-                            if (secret && secret.value) {
-                                console.log(`[Sidecar AI] Returning API key from secret_state`);
-                                return secret.value;
-                            }
-                        }
-                    }
-
                     // secret_state doesn't have the actual value, fetch it via API
                     if (secretKey) {
-                        console.log(`[Sidecar AI] Attempting to fetch secret via API: ${secretKey}, id: ${secretId}`);
+                        console.log(`[Sidecar AI] Method 1: Fetching secret via API: ${secretKey}, id: ${secretId}`);
                         const apiKey = await this.findSecret(secretKey, secretId);
                         if (apiKey) {
-                            console.log(`[Sidecar AI] Successfully fetched API key via API`);
+                            console.log(`[Sidecar AI] Successfully fetched API key via API (Method 1)`);
                             return apiKey;
+                        } else {
+                            console.log(`[Sidecar AI] API returned null for ${secretKey} with id ${secretId}`);
                         }
+                    } else {
+                        console.log(`[Sidecar AI] No secretKey mapped for provider: ${provider}`);
                     }
                 }
             }
