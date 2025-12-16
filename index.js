@@ -274,8 +274,11 @@ async function loadModules() {
             }
         };
 
-        // Restore immediately after initialization
-        restoreBlocks();
+        // Restore immediately after initialization (with cleanup)
+        setTimeout(() => {
+            resultFormatter.cleanupHiddenSidecarCards();
+            restoreBlocks();
+        }, 500);
 
         // Also listen for chat load events if available
         if (context.eventSource && context.event_types) {
@@ -290,12 +293,99 @@ async function loadModules() {
                 if (eventType) {
                     context.eventSource.on(eventType, () => {
                         console.log(`[Sidecar AI] Chat load event detected: ${eventType}`);
-                        // Delay restoration to ensure DOM is updated
+                        // Clean up hidden cards first, then restore visible ones
                         setTimeout(() => {
+                            resultFormatter.cleanupHiddenSidecarCards();
                             resultFormatter.restoreBlocksFromMetadata(addonManager);
                         }, 500);
                     });
                 }
+            });
+        }
+
+        // Set up periodic cleanup and swipe detection
+        // Clean up hidden sidecar cards more frequently during swipe (every 500ms)
+        setInterval(() => {
+            try {
+                resultFormatter.cleanupHiddenSidecarCards();
+            } catch (error) {
+                console.error('[Sidecar AI] Error in periodic cleanup:', error);
+            }
+        }, 500);
+
+        // Also listen for scroll events (swipe often triggers scroll)
+        let scrollTimeout;
+        const chatContainerForCleanup = document.querySelector('#chat') ||
+            document.querySelector('.chat') ||
+            document.querySelector('#chat_container') ||
+            document.querySelector('.chat_container');
+        if (chatContainerForCleanup) {
+            chatContainerForCleanup.addEventListener('scroll', () => {
+                // Immediate cleanup on scroll (swipe often triggers scroll)
+                resultFormatter.cleanupHiddenSidecarCards();
+            }, { passive: true });
+
+            // Also listen for touch events (swipe gestures)
+            let touchStartX = 0;
+            let touchStartY = 0;
+            chatContainerForCleanup.addEventListener('touchstart', (e) => {
+                touchStartX = e.touches[0].clientX;
+                touchStartY = e.touches[0].clientY;
+            }, { passive: true });
+
+            chatContainerForCleanup.addEventListener('touchend', () => {
+                // Cleanup after touch ends (swipe completed)
+                setTimeout(() => {
+                    resultFormatter.cleanupHiddenSidecarCards();
+                }, 100);
+            }, { passive: true });
+        }
+
+        // Listen for DOM mutations to detect when messages are hidden/shown
+        const cleanupObserver = new MutationObserver((mutations) => {
+            let shouldCleanup = false;
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'attributes' &&
+                    (mutation.attributeName === 'style' || mutation.attributeName === 'class')) {
+                    // Check if visibility changed
+                    const target = mutation.target;
+                    if (target.classList && (
+                        target.classList.contains('mes') ||
+                        target.id && target.id.startsWith('mes_') ||
+                        target.querySelector && target.querySelector('.sidecar-container')
+                    )) {
+                        shouldCleanup = true;
+                    }
+                }
+                if (mutation.type === 'childList') {
+                    // Check if sidecar containers were added/removed
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === 1 && (
+                            node.classList?.contains('sidecar-container') ||
+                            node.querySelector?.('.sidecar-container')
+                        )) {
+                            shouldCleanup = true;
+                        }
+                    });
+                }
+            });
+
+            if (shouldCleanup) {
+                // Debounce cleanup
+                clearTimeout(scrollTimeout);
+                scrollTimeout = setTimeout(() => {
+                    resultFormatter.cleanupHiddenSidecarCards();
+                }, 200);
+            }
+        });
+
+        // Observe chat container for changes
+        if (chatContainerForCleanup) {
+            cleanupObserver.observe(chatContainerForCleanup, {
+                attributes: true,
+                attributeFilter: ['style', 'class'],
+                childList: true,
+                subtree: true
             });
         }
 
@@ -311,6 +401,8 @@ async function loadModules() {
                 if (!hasRestored && chatContainer.querySelectorAll('.mes, .message').length > 0) {
                     hasRestored = true;
                     setTimeout(() => {
+                        // Clean up hidden cards first, then restore visible ones
+                        resultFormatter.cleanupHiddenSidecarCards();
                         resultFormatter.restoreBlocksFromMetadata(addonManager);
                     }, 1000);
                     // Stop observing after first restoration
@@ -328,6 +420,8 @@ async function loadModules() {
                 setTimeout(() => {
                     if (!hasRestored) {
                         hasRestored = true;
+                        // Clean up hidden cards first, then restore visible ones
+                        resultFormatter.cleanupHiddenSidecarCards();
                         resultFormatter.restoreBlocksFromMetadata(addonManager);
                     }
                 }, 1500);

@@ -1042,12 +1042,200 @@ export class ResultFormatter {
     }
 
     /**
+     * Check if a message element is currently visible in the viewport
+     * Handles various ways SillyTavern might hide/show messages during swipe
+     */
+    isMessageVisible(messageElement) {
+        if (!messageElement) return false;
+
+        // Check if element exists in DOM
+        if (!document.contains(messageElement)) return false;
+
+        // Check computed style for visibility
+        const style = window.getComputedStyle(messageElement);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
+            return false;
+        }
+
+        // Check if element is positioned off-screen (common in swipe implementations)
+        const rect = messageElement.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+        const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
+        // If element is completely outside viewport, it's not visible
+        if (rect.right < 0 || rect.left > viewportWidth || rect.bottom < 0 || rect.top > viewportHeight) {
+            return false;
+        }
+
+        // Check if element has very large transform (moved off-screen)
+        const transform = style.transform;
+        if (transform && transform !== 'none') {
+            const matrix = new DOMMatrix(transform);
+            // If translated far off-screen (more than viewport width), consider hidden
+            if (Math.abs(matrix.e) > viewportWidth * 2 || Math.abs(matrix.f) > viewportHeight * 2) {
+                return false;
+            }
+        }
+
+        // Check if parent containers are visible
+        let parent = messageElement.parentElement;
+        while (parent && parent !== document.body) {
+            const parentStyle = window.getComputedStyle(parent);
+            if (parentStyle.display === 'none' || parentStyle.visibility === 'hidden') {
+                return false;
+            }
+
+            // Check if parent is off-screen too
+            const parentRect = parent.getBoundingClientRect();
+            if (parentRect.right < -100 || parentRect.left > viewportWidth + 100) {
+                return false;
+            }
+
+            parent = parent.parentElement;
+        }
+
+        // Check for SillyTavern-specific classes that might indicate hidden state
+        // Some implementations use classes like 'hidden', 'inactive', 'swiped-away', etc.
+        const hiddenClasses = ['hidden', 'inactive', 'swiped-away', 'swipe-hidden', 'off-screen'];
+        if (hiddenClasses.some(cls => messageElement.classList.contains(cls))) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Get the currently active/visible message ID
+     * In swipe mode, this should be the message currently in viewport
+     */
+    getActiveMessageId() {
+        try {
+            // Try to find message in viewport center
+            const viewportCenter = window.innerHeight / 2;
+            const messages = document.querySelectorAll('[id^="mes_"], [data-message-id]');
+
+            let activeMessage = null;
+            let minDistance = Infinity;
+
+            messages.forEach(msg => {
+                const rect = msg.getBoundingClientRect();
+                // Check if message is in viewport
+                if (rect.top <= viewportCenter && rect.bottom >= viewportCenter) {
+                    const distance = Math.abs(rect.top + rect.height / 2 - viewportCenter);
+                    if (distance < minDistance) {
+                        minDistance = distance;
+                        activeMessage = msg;
+                    }
+                }
+            });
+
+            if (activeMessage) {
+                return activeMessage.id || activeMessage.getAttribute('data-message-id');
+            }
+
+            // Fallback: find message closest to viewport top
+            let closestToTop = null;
+            let closestTop = Infinity;
+            messages.forEach(msg => {
+                const rect = msg.getBoundingClientRect();
+                if (rect.top >= 0 && rect.top < closestTop) {
+                    closestTop = rect.top;
+                    closestToTop = msg;
+                }
+            });
+
+            if (closestToTop) {
+                return closestToTop.id || closestToTop.getAttribute('data-message-id');
+            }
+
+            return null;
+        } catch (error) {
+            console.error('[Sidecar AI] Error getting active message ID:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Clean up sidecar cards for messages that are no longer visible
+     * Only keeps cards for the currently active message during swipe
+     */
+    cleanupHiddenSidecarCards() {
+        try {
+            // Get the currently active message ID
+            const activeMessageId = this.getActiveMessageId();
+
+            // Find all sidecar containers
+            const allContainers = document.querySelectorAll('.sidecar-container');
+            let cleanedCount = 0;
+
+            allContainers.forEach(container => {
+                // Find the parent message element
+                let messageElement = container.closest('[id^="mes_"], [data-message-id]');
+
+                // If not found, try to find by traversing up
+                if (!messageElement) {
+                    let parent = container.parentElement;
+                    while (parent && parent !== document.body) {
+                        if (parent.id && parent.id.startsWith('mes_')) {
+                            messageElement = parent;
+                            break;
+                        }
+                        if (parent.getAttribute('data-message-id')) {
+                            messageElement = parent;
+                            break;
+                        }
+                        parent = parent.parentElement;
+                    }
+                }
+
+                if (!messageElement) {
+                    // If we can't find the message element, remove the container
+                    container.remove();
+                    cleanedCount++;
+                    return;
+                }
+
+                // Get message ID
+                const messageId = messageElement.id || messageElement.getAttribute('data-message-id');
+
+                // If we have an active message ID, only keep cards for that message
+                if (activeMessageId && messageId !== activeMessageId) {
+                    container.remove();
+                    cleanedCount++;
+                    console.log(`[Sidecar AI] Cleaned up sidecar container for inactive message (active: ${activeMessageId})`);
+                    return;
+                }
+
+                // Otherwise, use visibility check as fallback
+                if (!this.isMessageVisible(messageElement)) {
+                    container.remove();
+                    cleanedCount++;
+                    console.log(`[Sidecar AI] Cleaned up sidecar container for hidden message`);
+                }
+            });
+
+            if (cleanedCount > 0) {
+                console.log(`[Sidecar AI] Cleaned up ${cleanedCount} sidecar container(s) for hidden/inactive messages`);
+            }
+
+            return cleanedCount;
+        } catch (error) {
+            console.error('[Sidecar AI] Error cleaning up hidden sidecar cards:', error);
+            return 0;
+        }
+    }
+
+    /**
      * Restore all blocks from saved metadata when chat loads
      * Scans chat log and restores UI blocks for all saved results
+     * Only restores blocks for currently visible messages
      */
     async restoreBlocksFromMetadata(addonManager) {
         try {
             console.log('[Sidecar AI] Restoring blocks from metadata...');
+
+            // First, clean up any sidecar cards for hidden messages
+            this.cleanupHiddenSidecarCards();
 
             const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
             if (!Array.isArray(chatLog) || chatLog.length === 0) {
@@ -1070,6 +1258,17 @@ export class ResultFormatter {
 
                 const messageId = this.getMessageId(message);
 
+                // Find message element and check if it's visible
+                const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
+                if (!messageElement) {
+                    continue; // Skip if message element not found
+                }
+
+                // Only restore blocks for visible messages
+                if (!this.isMessageVisible(messageElement)) {
+                    continue; // Skip hidden messages
+                }
+
                 // Check each add-on for saved results in this message
                 for (const addon of allAddons) {
                     if (!addon.enabled) {
@@ -1089,43 +1288,37 @@ export class ResultFormatter {
                             // Restore the block based on response location
                             if (addon.responseLocation === 'chatHistory') {
                                 // For chatHistory, check if result is already in the message content
-                                const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
-                                if (messageElement) {
-                                    const contentArea = messageElement.querySelector('.mes_text') ||
-                                        messageElement.querySelector('.message') ||
-                                        messageElement;
+                                const contentArea = messageElement.querySelector('.mes_text') ||
+                                    messageElement.querySelector('.message') ||
+                                    messageElement;
 
-                                    if (contentArea) {
-                                        // Check if result is already displayed
-                                        const resultTag = `<!-- addon-result:${addon.id} -->`;
-                                        const hasResult = contentArea.innerHTML &&
-                                            (contentArea.innerHTML.includes(resultTag) ||
-                                                contentArea.innerHTML.includes(result.substring(0, 50)));
+                                if (contentArea) {
+                                    // Check if result is already displayed
+                                    const resultTag = `<!-- addon-result:${addon.id} -->`;
+                                    const hasResult = contentArea.innerHTML &&
+                                        (contentArea.innerHTML.includes(resultTag) ||
+                                            contentArea.innerHTML.includes(result.substring(0, 50)));
 
-                                        if (!hasResult) {
-                                            // Restore the formatted result
-                                            const formatted = this.formatResult(addon, result, message, false);
-                                            this.injectIntoChatHistory(messageId, addon, formatted);
-                                            restoredCount++;
-                                            console.log(`[Sidecar AI] Restored chatHistory block for ${addon.name} in message ${messageId}`);
-                                        }
+                                    if (!hasResult) {
+                                        // Restore the formatted result
+                                        const formatted = this.formatResult(addon, result, message, false);
+                                        this.injectIntoChatHistory(messageId, addon, formatted);
+                                        restoredCount++;
+                                        console.log(`[Sidecar AI] Restored chatHistory block for ${addon.name} in message ${messageId}`);
                                     }
                                 }
                             } else {
                                 // For outsideChatlog, restore dropdown UI
-                                const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
-                                if (messageElement) {
-                                    // Check if block already exists
-                                    const existingBlock = messageElement.querySelector(`.addon_section-${addon.id}`);
-                                    if (!existingBlock) {
-                                        // Restore the dropdown block
-                                        const formatted = this.formatResult(addon, result, message, true);
-                                        // Pass the found messageElement to avoid re-lookup failure
-                                        const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
-                                        if (success) {
-                                            restoredCount++;
-                                            console.log(`[Sidecar AI] Restored dropdown block for ${addon.name} in message ${messageId}`);
-                                        }
+                                // Check if block already exists
+                                const existingBlock = messageElement.querySelector(`.addon_section-${addon.id}`);
+                                if (!existingBlock) {
+                                    // Restore the dropdown block
+                                    const formatted = this.formatResult(addon, result, message, true);
+                                    // Pass the found messageElement to avoid re-lookup failure
+                                    const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
+                                    if (success) {
+                                        restoredCount++;
+                                        console.log(`[Sidecar AI] Restored dropdown block for ${addon.name} in message ${messageId}`);
                                     }
                                 }
                             }
