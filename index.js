@@ -3,17 +3,54 @@
  * Allows users to define custom add-on prompts that execute using cheaper AI models
  */
 
-import { getContext } from "../../extensions.js";
-import { AddonManager } from "./src/addon-manager.js";
-import { ContextBuilder } from "./src/context-builder.js";
-import { AIClient } from "./src/ai-client.js";
-import { ResultFormatter } from "./src/result-formatter.js";
-import { EventHandler } from "./src/event-handler.js";
+// Use dynamic imports with error handling
+let AddonManager, ContextBuilder, AIClient, ResultFormatter, EventHandler, getContext;
 
+async function loadModules() {
+    try {
+        const [
+            extensionsModule,
+            addonManagerModule,
+            contextBuilderModule,
+            aiClientModule,
+            resultFormatterModule,
+            eventHandlerModule
+        ] = await Promise.all([
+            import("../../extensions.js"),
+            import("./src/addon-manager.js"),
+            import("./src/context-builder.js"),
+            import("./src/ai-client.js"),
+            import("./src/result-formatter.js"),
+            import("./src/event-handler.js")
+        ]);
+
+        getContext = extensionsModule.getContext;
+        AddonManager = addonManagerModule.AddonManager;
+        ContextBuilder = contextBuilderModule.ContextBuilder;
+        AIClient = aiClientModule.AIClient;
+        ResultFormatter = resultFormatterModule.ResultFormatter;
+        EventHandler = eventHandlerModule.EventHandler;
+
+        return true;
+    } catch (error) {
+        console.error('[Add-Ons Extension] Failed to load modules:', error);
+        return false;
+    }
+}
+
+// Initialize extension
 (async function () {
     'use strict';
 
-    console.log('[Add-Ons Extension] Initializing...');
+    console.log('[Add-Ons Extension] Loading modules...');
+
+    const modulesLoaded = await loadModules();
+    if (!modulesLoaded) {
+        console.error('[Add-Ons Extension] Module loading failed, extension disabled');
+        return;
+    }
+
+    console.log('[Add-Ons Extension] Modules loaded, initializing...');
 
     try {
         // Get SillyTavern context
@@ -68,10 +105,11 @@ import { EventHandler } from "./src/event-handler.js";
         console.error('[Add-Ons Extension] Initialization error:', error);
         console.error('[Add-Ons Extension] Error name:', error?.name);
         console.error('[Add-Ons Extension] Error message:', error?.message || String(error));
+        console.error('[Add-Ons Extension] Error type:', typeof error);
         if (error?.stack) {
             console.error('[Add-Ons Extension] Error stack:', error.stack);
         }
-        // Don't throw - let extension load even if initialization fails partially
+        // Don't re-throw - SillyTavern extensions should handle errors gracefully
     }
 
     function initializeSettingsUI(context) {
