@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2025-12-16
+
+### Fixed
+- **Swipe Navigation**: Complete refactor of swipe handling for proper per-variant sidecar management
+  - Sidecars now stored per swipe variant (`message.swipe_info[swipeId].extra.sidecarResults`)
+  - Simplified "Clear and Render" strategy: clear container on swipe, render stored sidecars for new variant
+  - Fixed sidecars not displaying when generating new swipe variants
+  - Fixed sidecars not restoring when swiping back to previous variants
+  - Fixed loading indicators being hidden during new generation
+  - Event handler now tracks both `messageId` and `swipeId` to prevent duplicate processing
+  - Container visibility properly managed when injecting new content
+
+### Changed
+- **Storage Architecture**: Sidecars now stored per swipe variant instead of per message
+  - Follows SillyTavern's pattern: each swipe variant has its own `extra` object
+  - Backward compatible: falls back to `message.extra` if swipe variant storage not available
+  - All metadata operations (save, read, update, delete) now respect swipe variants
+
+### Technical
+- Refactored `handleSwipeVariantChange` to use simple clear-and-render approach
+- Removed complex hide/show/restore logic in favor of container clearing
+- Updated all metadata operations to use `swipe_info[swipeId].extra` storage
+- Improved event handling to distinguish between message and swipe variant changes
+
 ## [0.3.5] - 2025-12-16
 
 ### Fixed

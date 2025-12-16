@@ -1433,7 +1433,7 @@ export class ResultFormatter {
     async handleSwipeVariantChange(messageIndex, addonManager) {
         try {
             console.log(`[Sidecar AI] Handling swipe variant change for message ${messageIndex}`);
-            
+
             // Get the message from chat log
             const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
             if (messageIndex < 0 || messageIndex >= chatLog.length) {
@@ -1459,26 +1459,26 @@ export class ResultFormatter {
                 // This removes any sidecars from the previous variant
                 sidecarContainer.innerHTML = '';
                 sidecarContainer.style.display = ''; // Ensure it's visible
-                
+
                 // If this is a new swipe (empty), we leave it empty.
                 // If it's an existing swipe with stored results, we render them below.
             }
 
             // Check if this swipe variant has saved sidecars
             const hasStoredResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults;
-            
+
             if (hasStoredResults && Object.keys(hasStoredResults).length > 0) {
                 console.log(`[Sidecar AI] Found ${Object.keys(hasStoredResults).length} stored sidecar(s) for variant ${swipeId}`);
-                
+
                 // Restore sidecars for this variant
                 const allAddons = addonManager.getAllAddons();
-                
+
                 for (const addon of allAddons) {
                     if (!addon.enabled) continue;
-                    
+
                     const stored = hasStoredResults[addon.id];
                     if (!stored) continue;
-                    
+
                     if (addon.responseLocation === 'outsideChatlog') {
                         const formatted = this.formatResult(addon, stored.result, message, true);
                         this.injectIntoDropdown(addon, formatted, messageId, messageElement);
