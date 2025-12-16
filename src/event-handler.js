@@ -164,10 +164,13 @@ export class EventHandler {
 
                     let queuedCount = 0;
                     triggerAddons.forEach(addon => {
+                        console.log(`[Sidecar AI] Checking addon ${addon.name} triggers:`, addon.triggerConfig);
                         if (this.checkTriggerMatch(messageText, addon.triggerConfig)) {
                             console.log(`[Sidecar AI] Trigger matched for addon: ${addon.name}`);
                             this.queuedTriggers.add(addon.id);
                             queuedCount++;
+                        } else {
+                            console.log(`[Sidecar AI] No match for addon: ${addon.name}`);
                         }
                     });
 
@@ -325,6 +328,15 @@ export class EventHandler {
 
         // Handle string
         if (typeof message === 'string') return message;
+
+        // Handle jQuery object
+        if (message.jquery || (window.jQuery && message instanceof window.jQuery)) {
+            const $msg = message;
+            // Try to find message content in .mes_text
+            const content = $msg.find('.mes_text').text();
+            if (content) return content;
+            return $msg.text();
+        }
 
         // Handle DOM element
         if (message.nodeType === 1) { // Element
