@@ -264,12 +264,12 @@ async function loadModules() {
             // Create inner structure
             menuItem.innerHTML = `
                 <div class="extensionsMenuExtensionButton fa-solid fa-bolt"></div>
-                <div style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Run Sidecar</div>
-                <select id="sidecar_manual_select" class="text_pole" style="max-width: 120px; margin-right: 5px; padding: 2px; height: 28px;" title="Select Sidecar to run">
+                <div style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 0.9em;">Run Sidecar</div>
+                <select id="sidecar_manual_select" class="text_pole" style="width: 100px; max-width: 100px; margin-right: 5px; padding: 2px; height: 26px; font-size: 0.85em;" title="Select Sidecar to run">
                     <option value="all">All Manual</option>
                 </select>
-                <div id="sidecar_run_btn" class="menu_button" style="padding: 2px 8px; height: 28px; min-width: 28px; display: flex; align-items: center; justify-content: center;" title="Run Selected">
-                    <i class="fa-solid fa-play"></i>
+                <div id="sidecar_run_btn" class="menu_button" style="padding: 0; height: 26px; width: 26px; min-width: 26px; display: flex; align-items: center; justify-content: center; border-radius: 3px;" title="Run Selected">
+                    <i class="fa-solid fa-play" style="font-size: 0.8em;"></i>
                 </div>
             `;
 
@@ -280,10 +280,10 @@ async function loadModules() {
             const updateSelectOptions = () => {
                 const manualAddons = eventHandler.addonManager.getEnabledAddons()
                     .filter(addon => addon.triggerMode === 'manual');
-                
+
                 const currentValue = select.value;
                 select.innerHTML = '<option value="all">All Manual</option>';
-                
+
                 manualAddons.forEach(addon => {
                     const option = document.createElement('option');
                     option.value = addon.id;
@@ -308,7 +308,7 @@ async function loadModules() {
             // Run button handler
             runBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
-                
+
                 // Disable during processing
                 const originalHTML = runBtn.innerHTML;
                 runBtn.style.opacity = '0.5';
@@ -318,9 +318,9 @@ async function loadModules() {
                 try {
                     const selectedId = select.value;
                     const addonIds = selectedId === 'all' ? null : [selectedId];
-                    
+
                     await eventHandler.triggerAddons(addonIds);
-                    
+
                     runBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
                     setTimeout(() => {
                         runBtn.innerHTML = originalHTML;
