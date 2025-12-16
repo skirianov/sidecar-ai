@@ -1427,7 +1427,7 @@ export class SettingsUI {
                     const cleanedPattern = pattern.replace(/\(\?[imsux-]+\)/gi, '').trim();
                     const regex = new RegExp(cleanedPattern, 'i');
                     const matches = regex.test(testInput);
-                    
+
                     if (matches) {
                         hasMatch = true;
                         // Find the match position for highlighting
@@ -1464,7 +1464,7 @@ export class SettingsUI {
         } else {
             resultHTML += '<div style="background: #fff3cd; border: 1px solid #ffeaa7; color: #856404; padding: 8px; border-radius: 4px; margin-bottom: 8px;"><strong>⚠ No patterns matched</strong></div>';
         }
-        
+
         resultHTML += '<div style="font-size: 0.9em;">' + results.join('') + '</div>';
         resultDiv.html(resultHTML).show();
     }

@@ -159,8 +159,8 @@ export class EventHandler {
 
             // Check if message is from user
             const isUserMessage = this.isUserMessage(message);
-            console.log('[Sidecar AI] Message type check:', { 
-                isUserMessage, 
+            console.log('[Sidecar AI] Message type check:', {
+                isUserMessage,
                 messageType: typeof message,
                 hasMes: !!message?.mes,
                 isUser: message?.is_user,
@@ -172,7 +172,7 @@ export class EventHandler {
                 // USER MESSAGE: Check for triggers
                 const triggerAddons = this.addonManager.getEnabledAddons()
                     .filter(addon => addon.triggerMode === 'trigger');
-                
+
                 console.log(`[Sidecar AI] Found ${triggerAddons.length} trigger mode sidecar(s)`);
 
                 if (triggerAddons.length > 0) {
@@ -210,11 +210,11 @@ export class EventHandler {
                     console.log('[Sidecar AI] Fallback: Detected user message before AI response, checking triggers');
                     const triggerAddons = this.addonManager.getEnabledAddons()
                         .filter(addon => addon.triggerMode === 'trigger');
-                    
+
                     if (triggerAddons.length > 0) {
                         const messageText = this.getUserMessageText(previousMessage);
                         console.log('[Sidecar AI] Fallback: Checking triggers for user message:', messageText.substring(0, 50) + '...');
-                        
+
                         triggerAddons.forEach(addon => {
                             console.log(`[Sidecar AI] Fallback: Checking addon ${addon.name} triggers:`, addon.triggerConfig);
                             if (this.checkTriggerMatch(messageText, addon.triggerConfig)) {
