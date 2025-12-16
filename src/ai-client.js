@@ -389,47 +389,51 @@ export class AIClient {
                     console.warn('[Sidecar AI] ChatCompletionService test failed:', chatServiceError);
                     console.warn('[Sidecar AI] Error type:', typeof chatServiceError);
                     console.warn('[Sidecar AI] Error keys:', chatServiceError ? Object.keys(chatServiceError) : 'null');
+                    console.warn('[Sidecar AI] Full error object:', chatServiceError);
 
-                    // Extract error message properly
+                    // ChatCompletionService throws the JSON response directly when there's an error
+                    // The error object is the API response, which may have nested error properties
                     let errorMsg = '';
                     if (chatServiceError && typeof chatServiceError === 'object') {
-                        // Try multiple ways to extract error message
-                        if (chatServiceError.message) {
+                        // Try to extract error message from various possible structures
+                        // Common structures: {error: {...}}, {error: "message"}, {message: "..."}, {error: true, ...}
+                        
+                        // Check for nested error.message (most common)
+                        if (chatServiceError.error && typeof chatServiceError.error === 'object') {
+                            errorMsg = chatServiceError.error.message || 
+                                      chatServiceError.error.error?.message ||
+                                      chatServiceError.error.error ||
+                                      JSON.stringify(chatServiceError.error);
+                        }
+                        // Check for string error
+                        else if (chatServiceError.error && typeof chatServiceError.error === 'string') {
+                            errorMsg = chatServiceError.error;
+                        }
+                        // Check for top-level message
+                        else if (chatServiceError.message) {
                             errorMsg = chatServiceError.message;
-                        } else if (chatServiceError.error) {
-                            if (typeof chatServiceError.error === 'string') {
-                                errorMsg = chatServiceError.error;
-                            } else if (chatServiceError.error.message) {
-                                errorMsg = chatServiceError.error.message;
-                            } else if (chatServiceError.error.error) {
-                                errorMsg = chatServiceError.error.error;
+                        }
+                        // Check for statusText or status
+                        else if (chatServiceError.statusText) {
+                            errorMsg = `${chatServiceError.status} ${chatServiceError.statusText}`;
+                        }
+                        // Try to find any string property that might be an error message
+                        else {
+                            const stringProps = Object.entries(chatServiceError)
+                                .filter(([k, v]) => typeof v === 'string' && v.length > 0 && k !== 'error')
+                                .map(([k, v]) => `${k}: ${v}`);
+                            if (stringProps.length > 0) {
+                                errorMsg = stringProps.join(', ');
                             } else {
-                                // Try to stringify the error object
+                                // Last resort: stringify the whole object (excluding error: true)
                                 try {
-                                    errorMsg = JSON.stringify(chatServiceError.error);
+                                    const errorStr = JSON.stringify(chatServiceError, null, 2);
+                                    if (errorStr !== '{}' && errorStr !== '{"error":true}') {
+                                        errorMsg = errorStr;
+                                    }
                                 } catch (e) {
-                                    errorMsg = String(chatServiceError.error);
+                                    errorMsg = String(chatServiceError);
                                 }
-                            }
-                        } else if (chatServiceError.response) {
-                            // Check if there's a response object
-                            const response = chatServiceError.response;
-                            if (response.error) {
-                                errorMsg = typeof response.error === 'string' ? response.error : JSON.stringify(response.error);
-                            } else if (response.message) {
-                                errorMsg = response.message;
-                            }
-                        } else {
-                            // Last resort: try to stringify the whole object
-                            try {
-                                const errorStr = JSON.stringify(chatServiceError);
-                                if (errorStr !== '{}' && errorStr !== '{"error":true}') {
-                                    errorMsg = errorStr;
-                                } else {
-                                    errorMsg = 'Unknown error (check console for details)';
-                                }
-                            } catch (e) {
-                                errorMsg = String(chatServiceError);
                             }
                         }
                     } else {
@@ -437,8 +441,8 @@ export class AIClient {
                     }
 
                     // If error message is still empty or just "true", provide a default
-                    if (!errorMsg || errorMsg === 'true' || errorMsg === '{}') {
-                        errorMsg = 'Bad Request (400) - Check model name and API configuration';
+                    if (!errorMsg || errorMsg === 'true' || errorMsg === '{}' || errorMsg === '{"error":true}') {
+                        errorMsg = 'Bad Request (400) - Check model name and API configuration. The model name might be invalid or the API key may not have access to this model.';
                     }
 
                     // If using ST key and ChatCompletionService fails, it's likely a configuration issue
@@ -787,13 +791,19 @@ export class AIClient {
             return false;
         }
 
+        const providerLower = provider.toLowerCase();
+        console.log(`[Sidecar AI] hasProviderApiKey: Checking for ${provider} (${providerLower})`);
+
         // Method 1: Check Connection Manager profiles
         if (this.context && this.context.extensionSettings && this.context.extensionSettings.connectionManager) {
             const profiles = this.context.extensionSettings.connectionManager.profiles || [];
-            const providerLower = provider.toLowerCase();
+            console.log(`[Sidecar AI] Checking ${profiles.length} connection manager profiles`);
 
             for (const profile of profiles) {
-                if (profile && profile.api?.toLowerCase() === providerLower && profile['secret-id']) {
+                const profileApi = profile?.api?.toLowerCase();
+                console.log(`[Sidecar AI] Profile: api=${profileApi}, hasSecretId=${!!profile?.['secret-id']}`);
+                
+                if (profile && profileApi === providerLower && profile['secret-id']) {
                     console.log(`[Sidecar AI] Found connection profile with secret-id for ${provider}`);
                     return true;
                 }
@@ -804,15 +814,17 @@ export class AIClient {
         const secretState = this.getSecretState();
         if (secretState) {
             const secretKey = this.getSecretKeyForProvider(provider);
+            console.log(`[Sidecar AI] Checking secret_state for key: ${secretKey}`);
             if (secretKey && secretState[secretKey]) {
                 const secrets = secretState[secretKey];
                 if (Array.isArray(secrets) && secrets.length > 0) {
-                    console.log(`[Sidecar AI] Found secret_state entry for ${provider}`);
+                    console.log(`[Sidecar AI] Found secret_state entry for ${provider} (${secrets.length} secrets)`);
                     return true;
                 }
             }
         }
 
+        console.log(`[Sidecar AI] No API key found for ${provider}`);
         return false;
     }
 

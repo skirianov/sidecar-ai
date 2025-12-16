@@ -266,25 +266,56 @@ export class SettingsUI {
 
         // STRATEGY 1: "Steal" from SillyTavern's existing UI (The "Lazy" but effective method)
         // If the user has the API Connections tab loaded, the dropdowns might already be populated
+        // IMPORTANT: Exclude sorting/grouping dropdowns - only get actual model dropdowns
+        const excludeSelectors = [
+            '#openrouter_sort_models',
+            '#openrouter_group_models',
+            '#openrouter_group_models_chat',
+            '#openrouter_sort_models_chat'
+        ];
+        
         const domSelectors = [
-            `#model_${provider}_select`, // Most common format
+            `#model_${provider}_select`, // Most common format (e.g., #model_openrouter_select)
             `#model_${provider}`, // Alternative format
             `#${provider}_model`, // Another alternative
             `select[name="${provider}_model"]`, // By name attribute
-            `select[id*="${provider}"][id*="model"]`, // Partial match
-            `#api_button_${provider}`, // Sometimes attached to buttons
-            `select[id*="model"][id*="${provider}"]` // Reverse partial match
+            `select[id*="${provider}"][id*="model"]:not([id*="sort"]):not([id*="group"])`, // Partial match, exclude sort/group
+            `select[id*="model"][id*="${provider}"]:not([id*="sort"]):not([id*="group"])` // Reverse partial match, exclude sort/group
         ];
 
         for (const selector of domSelectors) {
             try {
+                // Skip excluded selectors
+                if (excludeSelectors.some(exclude => selector.includes(exclude))) {
+                    continue;
+                }
+                
                 const $el = $(selector);
-                if ($el.length && $el.is('select') && $el.find('option').length > 1) { // >1 because of default "Select..." option
+                if ($el.length && $el.is('select') && $el.find('option').length > 1) {
+                    // Check if this is a sorting/grouping dropdown by examining option values
+                    const firstOption = $el.find('option').eq(0).val();
+                    const isSortingDropdown = firstOption === 'alphabetically' || 
+                                             firstOption === 'price' || 
+                                             firstOption === 'context' ||
+                                             $el.attr('id')?.includes('sort') ||
+                                             $el.attr('id')?.includes('group');
+                    
+                    if (isSortingDropdown) {
+                        console.log(`[Sidecar AI] Skipping sorting/grouping dropdown: ${selector}`);
+                        continue;
+                    }
+                    
                     console.log(`[Sidecar AI] Found populated dropdown at ${selector} with ${$el.find('option').length} options`);
                     $el.find('option').each(function () {
                         const val = $(this).val();
                         const txt = $(this).text();
-                        if (val && val !== '' && val !== 'Select a model...' && val !== 'Select...') {
+                        // Exclude sorting options and empty values
+                        if (val && val !== '' && 
+                            val !== 'Select a model...' && val !== 'Select...' &&
+                            val !== 'alphabetically' && val !== 'price' && val !== 'context' &&
+                            !txt.toLowerCase().includes('alphabetically') &&
+                            !txt.toLowerCase().includes('price (cheapest)') &&
+                            !txt.toLowerCase().includes('context size')) {
                             models.push({
                                 value: val,
                                 label: txt,
