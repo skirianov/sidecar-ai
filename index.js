@@ -304,25 +304,40 @@ async function loadModules() {
         }
 
         // Set up periodic cleanup and swipe detection
-        // Clean up hidden sidecar cards more frequently during swipe (every 500ms)
-        setInterval(() => {
-            try {
-                resultFormatter.cleanupHiddenSidecarCards();
-            } catch (error) {
-                console.error('[Sidecar AI] Error in periodic cleanup:', error);
-            }
-        }, 500);
+        // Delay initial cleanup to allow restoration to complete first
+        setTimeout(() => {
+            // Clean up hidden sidecar cards periodically (every 1 second after initial delay)
+            setInterval(() => {
+                try {
+                    resultFormatter.cleanupHiddenSidecarCards();
+                } catch (error) {
+                    console.error('[Sidecar AI] Error in periodic cleanup:', error);
+                }
+            }, 1000);
+        }, 2000); // Wait 2 seconds before starting cleanup
 
         // Also listen for scroll events (swipe often triggers scroll)
         let scrollTimeout;
+        let initialLoadComplete = false;
+        // Mark initial load as complete after a delay
+        setTimeout(() => {
+            initialLoadComplete = true;
+        }, 3000);
+
         const chatContainerForCleanup = document.querySelector('#chat') ||
             document.querySelector('.chat') ||
             document.querySelector('#chat_container') ||
             document.querySelector('.chat_container');
         if (chatContainerForCleanup) {
             chatContainerForCleanup.addEventListener('scroll', () => {
-                // Immediate cleanup on scroll (swipe often triggers scroll)
-                resultFormatter.cleanupHiddenSidecarCards();
+                // Only cleanup on scroll after initial load is complete
+                if (initialLoadComplete) {
+                    // Debounce cleanup on scroll
+                    clearTimeout(scrollTimeout);
+                    scrollTimeout = setTimeout(() => {
+                        resultFormatter.cleanupHiddenSidecarCards();
+                    }, 300);
+                }
             }, { passive: true });
 
             // Also listen for touch events (swipe gestures)

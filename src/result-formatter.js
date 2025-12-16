@@ -346,6 +346,9 @@ export class ResultFormatter {
             } else {
                 messageElement.appendChild(sidecarContainer);
             }
+
+            // Mark as recently restored to protect from cleanup
+            this.markContainerAsRestored(sidecarContainer);
         }
 
         // Check if loading indicator already exists for this addon - avoid duplicates
@@ -472,6 +475,9 @@ export class ResultFormatter {
                 } else {
                     messageElement.appendChild(sidecarContainer);
                 }
+
+                // Mark as recently restored to protect from cleanup
+                this.markContainerAsRestored(sidecarContainer);
             }
 
             // Check if error indicator already exists for this addon - remove old one
@@ -559,6 +565,12 @@ export class ResultFormatter {
                 } else {
                     messageElement.appendChild(sidecarContainer);
                 }
+
+                // Mark as recently restored to protect from cleanup
+                this.markContainerAsRestored(sidecarContainer);
+            } else {
+                // Also mark existing containers as restored when updating
+                this.markContainerAsRestored(sidecarContainer);
             }
 
             // Check if addon section already exists - if so, just update it
@@ -1157,18 +1169,45 @@ export class ResultFormatter {
 
     /**
      * Clean up sidecar cards for messages that are no longer visible
-     * Only keeps cards for the currently active message during swipe
+     * Only removes cards for messages that are truly hidden/off-screen
      */
     cleanupHiddenSidecarCards() {
         try {
-            // Get the currently active message ID
-            const activeMessageId = this.getActiveMessageId();
+            // Track recently restored containers (give them grace period)
+            const now = Date.now();
+            if (!this._restoredContainers) {
+                this._restoredContainers = new Map();
+            }
+
+            // Clean up old entries (older than 2 seconds)
+            for (const [container, timestamp] of this._restoredContainers.entries()) {
+                if (now - timestamp > 2000) {
+                    this._restoredContainers.delete(container);
+                }
+            }
+
+            // Get all visible message IDs (not just active, but all visible ones)
+            const visibleMessageIds = new Set();
+            const allMessages = document.querySelectorAll('[id^="mes_"], [data-message-id]');
+            allMessages.forEach(msg => {
+                if (this.isMessageVisible(msg)) {
+                    const msgId = msg.id || msg.getAttribute('data-message-id');
+                    if (msgId) {
+                        visibleMessageIds.add(msgId);
+                    }
+                }
+            });
 
             // Find all sidecar containers
             const allContainers = document.querySelectorAll('.sidecar-container');
             let cleanedCount = 0;
 
             allContainers.forEach(container => {
+                // Skip recently restored containers (grace period)
+                if (this._restoredContainers.has(container)) {
+                    return;
+                }
+
                 // Find the parent message element
                 let messageElement = container.closest('[id^="mes_"], [data-message-id]');
 
@@ -1198,24 +1237,31 @@ export class ResultFormatter {
                 // Get message ID
                 const messageId = messageElement.id || messageElement.getAttribute('data-message-id');
 
-                // If we have an active message ID, only keep cards for that message
-                if (activeMessageId && messageId !== activeMessageId) {
-                    container.remove();
-                    cleanedCount++;
-                    console.log(`[Sidecar AI] Cleaned up sidecar container for inactive message (active: ${activeMessageId})`);
-                    return;
-                }
-
-                // Otherwise, use visibility check as fallback
+                // Only remove if message is truly hidden/not visible
+                // Don't remove just because it's not the "active" one - keep all visible messages' cards
                 if (!this.isMessageVisible(messageElement)) {
                     container.remove();
                     cleanedCount++;
-                    console.log(`[Sidecar AI] Cleaned up sidecar container for hidden message`);
+                    console.log(`[Sidecar AI] Cleaned up sidecar container for hidden message ${messageId}`);
+                } else if (messageId && visibleMessageIds.size > 0 && !visibleMessageIds.has(messageId)) {
+                    // If we have visible messages tracked and this one isn't in the list, it might be off-screen
+                    // But be more lenient - only remove if it's clearly off-screen
+                    const rect = messageElement.getBoundingClientRect();
+                    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
+                    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
+
+                    // Only remove if clearly outside viewport with margin
+                    if (rect.right < -100 || rect.left > viewportWidth + 100 ||
+                        rect.bottom < -100 || rect.top > viewportHeight + 100) {
+                        container.remove();
+                        cleanedCount++;
+                        console.log(`[Sidecar AI] Cleaned up sidecar container for off-screen message ${messageId}`);
+                    }
                 }
             });
 
             if (cleanedCount > 0) {
-                console.log(`[Sidecar AI] Cleaned up ${cleanedCount} sidecar container(s) for hidden/inactive messages`);
+                console.log(`[Sidecar AI] Cleaned up ${cleanedCount} sidecar container(s) for hidden/off-screen messages`);
             }
 
             return cleanedCount;
@@ -1223,6 +1269,16 @@ export class ResultFormatter {
             console.error('[Sidecar AI] Error cleaning up hidden sidecar cards:', error);
             return 0;
         }
+    }
+
+    /**
+     * Mark a container as recently restored (protect from cleanup)
+     */
+    markContainerAsRestored(container) {
+        if (!this._restoredContainers) {
+            this._restoredContainers = new Map();
+        }
+        this._restoredContainers.set(container, Date.now());
     }
 
     /**
@@ -1234,8 +1290,8 @@ export class ResultFormatter {
         try {
             console.log('[Sidecar AI] Restoring blocks from metadata...');
 
-            // First, clean up any sidecar cards for hidden messages
-            this.cleanupHiddenSidecarCards();
+            // Don't cleanup before restoration - let restoration complete first
+            // Cleanup will happen after a delay via periodic cleanup
 
             const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
             if (!Array.isArray(chatLog) || chatLog.length === 0) {
@@ -1258,15 +1314,16 @@ export class ResultFormatter {
 
                 const messageId = this.getMessageId(message);
 
-                // Find message element and check if it's visible
+                // Find message element
                 const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
                 if (!messageElement) {
                     continue; // Skip if message element not found
                 }
 
-                // Only restore blocks for visible messages
-                if (!this.isMessageVisible(messageElement)) {
-                    continue; // Skip hidden messages
+                // On first load, restore all messages (cleanup will handle hiding later)
+                // Only skip if message is clearly not in DOM
+                if (!document.contains(messageElement)) {
+                    continue;
                 }
 
                 // Check each add-on for saved results in this message
@@ -1317,6 +1374,11 @@ export class ResultFormatter {
                                     // Pass the found messageElement to avoid re-lookup failure
                                     const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
                                     if (success) {
+                                        // Mark the container as restored to protect from immediate cleanup
+                                        const container = messageElement.querySelector('.sidecar-container');
+                                        if (container) {
+                                            this.markContainerAsRestored(container);
+                                        }
                                         restoredCount++;
                                         console.log(`[Sidecar AI] Restored dropdown block for ${addon.name} in message ${messageId}`);
                                     }
