@@ -1,4 +1,4 @@
-# SillyTavern Add-Ons Extension
+# SillyTavern Sidecar AI Add-Ons
 
 A SillyTavern extension that allows you to define custom "add-on" prompts (like critiques, comments, interviews, etc.) that execute using cheaper AI models instead of your main expensive model. This helps reduce costs by routing auxiliary processing tasks to more affordable AI providers.
 
@@ -25,21 +25,21 @@ A SillyTavern extension that allows you to define custom "add-on" prompts (like 
 
 4. **Accessing the Extension**:
    - Go to **Settings** (gear icon) → **Extensions** tab
-   - Look for **"Add-Ons Extension"** in the extensions list
+   - Look for **"Sidecar AI Add-Ons"** in the extensions list
    - Click on it to open the settings panel
    - If you don't see it, check the browser console (F12) for any errors
 
 5. **Troubleshooting**:
    - Make sure the folder structure is: `public/scripts/extensions/third-party/sidecar-ai/`
    - Verify `manifest.json`, `index.js`, and `settings.html` are in the root of the folder
-   - Check browser console for `[Add-Ons Extension]` messages
+   - Check browser console for `[Add-Ons Extension]` or `[Sidecar AI Add-Ons]` messages
    - Ensure the extension is enabled in the Extensions list
 
 ## Usage
 
 ### Creating an Add-On
 
-1. Go to **Settings** → **Extensions** → **Add-Ons Extension**
+1. Go to **Settings** → **Extensions** → **Sidecar AI Add-Ons**
 2. Click **"Add New Add-On"**
 3. Fill in the form:
    - **Name**: A descriptive name for your add-on

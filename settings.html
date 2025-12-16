@@ -1,7 +1,6 @@
-<script id="sidecar-ai-settings-template" type="text/x-handlebars-template" data-extension="sidecar-ai">
-<div class="add_ons_extension_settings">
+<div id="add_ons_extension_settings" class="add_ons_extension_settings">
     <div class="add_ons_header">
-        <h3>Add-Ons Extension Settings</h3>
+        <h3>Sidecar AI Add-Ons Settings</h3>
         <p class="add_ons_description">Define custom prompts that execute using cheaper AI models. Use variables like {{lastMessages}}, {{charCard}}, {{userCard}}, {{worldCard}}, {{currentMessage}} in your prompts.</p>
     </div>
 
@@ -13,40 +12,10 @@
         </div>
 
         <div class="add_ons_list" id="add_ons_list">
-            {{#each addons}}
-            <div class="add_ons_item" data-addon-id="{{id}}">
-                <div class="add_ons_item_header">
-                    <div class="add_ons_item_info">
-                        <h4>{{name}}</h4>
-                        <span class="add_ons_item_meta">
-                            {{#if enabled}}<span class="add_ons_badge add_ons_badge_enabled">Enabled</span>{{else}}<span class="add_ons_badge add_ons_badge_disabled">Disabled</span>{{/if}}
-                            <span class="add_ons_badge">{{triggerMode}}</span>
-                            <span class="add_ons_badge">{{requestMode}}</span>
-                            <span class="add_ons_badge">{{responseLocation}}</span>
-                        </span>
-                    </div>
-                    <div class="add_ons_item_actions">
-                        <label class="add_ons_toggle">
-                            <input type="checkbox" {{#if enabled}}checked{{/if}} data-addon-id="{{id}}" class="add_ons_enable_toggle">
-                            <span class="add_ons_toggle_slider"></span>
-                        </label>
-                        <button class="add_ons_button add_ons_button_small" data-action="edit" data-addon-id="{{id}}">
-                            <i class="fa-solid fa-edit"></i> Edit
-                        </button>
-                        <button class="add_ons_button add_ons_button_small add_ons_button_danger" data-action="delete" data-addon-id="{{id}}">
-                            <i class="fa-solid fa-trash"></i> Delete
-                        </button>
-                    </div>
-                </div>
-                {{#if description}}
-                <p class="add_ons_item_description">{{description}}</p>
-                {{/if}}
-            </div>
-            {{else}}
+            <!-- Add-ons will be rendered here by JavaScript -->
             <div class="add_ons_empty">
                 <p>No add-ons configured. Click "Add New Add-On" to create one.</p>
             </div>
-            {{/each}}
         </div>
     </div>
 
@@ -173,13 +142,12 @@
         </div>
     </div>
 </div>
-</script>
 
 <script>
 (function() {
     'use strict';
 
-        // Settings UI handler
+    // Settings UI handler
     if (typeof window.addOnsExtensionSettings === 'undefined') {
         window.addOnsExtensionSettings = {
             init: function() {
@@ -193,6 +161,8 @@
                 const addonManager = window.addOnsExtension?.getAddonManager();
                 if (!addonManager) {
                     console.warn('[Add-Ons Extension] Add-on manager not available for settings UI');
+                    // Try again after a short delay
+                    setTimeout(() => this.renderAddonsList(), 500);
                     return;
                 }
 
@@ -305,7 +275,7 @@
             },
 
             loadSettings: function() {
-                // Settings are loaded via Handlebars template
+                // Settings are loaded from extension manager
                 // This function can be used for additional initialization
             },
 

@@ -1,5 +1,5 @@
 {
-    "display_name": "Add-Ons Extension",
+    "display_name": "Sidecar AI Add-Ons",
     "loading_order": 100,
     "requires": [],
     "optional": [],
@@ -7,6 +7,6 @@
     "css": "style.css",
     "author": "Sidecar AI",
     "version": "1.0.0",
-    "homePage": "https://github.com/yourusername/add-ons-extension",
+    "homePage": "https://github.com/sidecar-ai/sillytavern-add-ons",
     "auto_update": false
 }
