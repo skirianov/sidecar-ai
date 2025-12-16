@@ -315,6 +315,18 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 15px;
+    margin-bottom: 15px;
+}
+
+.add_ons_form_row .add_ons_form_group {
+    margin-bottom: 0; /* Remove bottom margin when in a row */
+}
+
+.add_ons_form_row .add_ons_form_group select.text_pole {
+    width: 100%;
+    min-width: 0; /* Allow select to shrink */
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .add_ons_variable_buttons {
@@ -333,11 +345,19 @@
 .add_ons_api_key_row {
     display: flex;
     gap: 8px;
-    align-items: center;
+    align-items: stretch;
 }
 
 .add_ons_api_key_row .text_pole {
     flex: 1;
+    min-width: 0; /* Allow flex item to shrink below content size */
+}
+
+.add_ons_api_key_row .menu_button {
+    flex-shrink: 0;
+    height: auto;
+    align-self: center;
+    white-space: nowrap;
 }
 
 .add_ons_form_checkboxes {

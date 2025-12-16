@@ -108,7 +108,7 @@
                 </div>
 
                 <div class="add_ons_form_row" id="add_ons_api_key_row">
-                    <div class="add_ons_form_group">
+                    <div class="add_ons_form_group" style="grid-column: 1 / -1;">
                         <label for="add_ons_form_api_key">API Key (Optional)</label>
                         <div class="add_ons_api_key_row">
                             <input type="password" id="add_ons_form_api_key" name="apiKey" class="text_pole" placeholder="Leave empty to use SillyTavern's configured key">
@@ -116,28 +116,29 @@
                         </div>
                         <small class="add_ons_form_hint">If left empty, will use the API key configured in SillyTavern's API Connection settings for this provider</small>
                     </div>
+                </div>
 
-                    <div class="add_ons_form_row">
-                        <div class="add_ons_form_group">
-                            <label for="add_ons_form_result_format">Result Format *</label>
-                            <select id="add_ons_form_result_format" name="resultFormat" class="text_pole" required>
-                                <option value="append">Append (inline)</option>
-                                <option value="separate">Separate Block</option>
-                                <option value="collapsible" selected>Collapsible</option>
-                            </select>
-                        </div>
-
-                        <div class="add_ons_form_group">
-                            <label for="add_ons_form_response_location">Response Location *</label>
-                            <select id="add_ons_form_response_location" name="responseLocation" class="text_pole" required>
-                                <option value="chatHistory">Chat History (HTML comment, accessible to main AI)</option>
-                                <option value="outsideChatlog" selected>Outside Chatlog (dropdown below chat)</option>
-                            </select>
-                            <small class="add_ons_form_hint" id="add_ons_response_location_hint">
-                                Results appear in expandable dropdown below chat area
-                            </small>
-                        </div>
+                <div class="add_ons_form_row">
+                    <div class="add_ons_form_group">
+                        <label for="add_ons_form_result_format">Result Format *</label>
+                        <select id="add_ons_form_result_format" name="resultFormat" class="text_pole" required>
+                            <option value="append">Append (inline)</option>
+                            <option value="separate">Separate Block</option>
+                            <option value="collapsible" selected>Collapsible</option>
+                        </select>
                     </div>
+
+                    <div class="add_ons_form_group">
+                        <label for="add_ons_form_response_location">Response Location *</label>
+                        <select id="add_ons_form_response_location" name="responseLocation" class="text_pole" required>
+                            <option value="chatHistory">Chat History (HTML comment, accessible to main AI)</option>
+                            <option value="outsideChatlog" selected>Outside Chatlog (dropdown below chat)</option>
+                        </select>
+                        <small class="add_ons_form_hint" id="add_ons_response_location_hint">
+                            Results appear in expandable dropdown below chat area
+                        </small>
+                    </div>
+                </div>
 
                     <div class="add_ons_form_section">
                         <h4>Context Settings</h4>
