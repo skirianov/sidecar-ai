@@ -20,6 +20,14 @@
     --sidecar-accent: var(--SmartThemeEmColor, #9fc);
 }
 
+/* Service Provider Dropdown (OpenRouter) - Make scrollable */
+#sidecar_ai_settings #add_ons_form_service_provider,
+.add_ons_modal #add_ons_form_service_provider {
+    max-height: 200px !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
 /* Inline Drawer */
 #sidecar_ai_settings .inline-drawer {
     background-color: rgba(0, 0, 0, 0.2);

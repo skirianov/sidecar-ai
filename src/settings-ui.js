@@ -682,22 +682,32 @@ export class SettingsUI {
         let apiKey = apiKeyField.val();
         const isUsingSTKey = apiKeyField.attr('data-using-st-key') === 'true' || apiKey === 'Using saved key from SillyTavern';
 
-        // If using ST's saved key, get it from ST settings
-        if (isUsingSTKey) {
-            if (this.aiClient) {
-                apiKey = await this.aiClient.getProviderApiKey(provider);
-            } else {
-                apiKey = null;
+        // Get service provider for OpenRouter
+        const serviceProvider = provider === 'openrouter' 
+            ? ($('#add_ons_form_service_provider').val() || [])
+            : [];
+
+        // If using ST's saved key, we'll use ChatCompletionService which handles keys internally
+        // Otherwise, we need the actual key for testing
+        if (!isUsingSTKey) {
+            apiKey = apiKey.trim();
+            if (!apiKey || apiKey.trim() === '') {
+                alert('Please enter an API Key or configure it in SillyTavern\'s API Connection settings.');
+                $('#add_ons_form_api_key').focus();
+                this.highlightError('#add_ons_form_api_key');
+                return;
             }
         } else {
-            apiKey = apiKey.trim();
-        }
-
-        if (!apiKey || apiKey.trim() === '') {
-            alert('Please enter an API Key or configure it in SillyTavern\'s API Connection settings.');
-            $('#add_ons_form_api_key').focus();
-            this.highlightError('#add_ons_form_api_key');
-            return;
+            // Check if key exists (without fetching)
+            const hasKey = this.aiClient.hasProviderApiKey(provider);
+            if (!hasKey) {
+                alert('No API key found in SillyTavern\'s settings. Please configure it in API Connection settings or enter a key manually.');
+                $('#add_ons_form_api_key').focus();
+                this.highlightError('#add_ons_form_api_key');
+                return;
+            }
+            // Set apiKey to null - ChatCompletionService will fetch it
+            apiKey = null;
         }
 
         // Clear previous errors
@@ -713,7 +723,8 @@ export class SettingsUI {
                 throw new Error('AI Client not initialized');
             }
 
-            const result = await this.aiClient.testConnection(provider, model, apiKey, apiUrl);
+            // Use ChatCompletionService for testing if using ST key (avoids 403 errors)
+            const result = await this.aiClient.testConnection(provider, model, apiKey, apiUrl, serviceProvider, isUsingSTKey);
 
             if (result.success) {
                 alert('✓ Connection successful!');

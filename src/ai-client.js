@@ -344,7 +344,7 @@ export class AIClient {
      * Test API connection with provided credentials
      * Sends a minimal test request to validate API key, model, and endpoint
      */
-    async testConnection(provider, model, apiKey, apiUrl = null) {
+    async testConnection(provider, model, apiKey, apiUrl = null, serviceProvider = [], isUsingSTKey = false) {
         try {
             const chatCompletionSource = this.getChatCompletionSource(provider);
 
@@ -353,9 +353,10 @@ export class AIClient {
             const isCorsBlocking = corsBlockingProviders.includes(provider.toLowerCase());
 
             // Try ChatCompletionService first (avoids CORS issues, uses server-side requests)
-            // This is especially important for providers like Deepseek that block browser requests
-            if (this.context && this.context.ChatCompletionService) {
-                console.log(`[Sidecar AI] Testing connection via ChatCompletionService: ${provider} (${model})`);
+            // This is especially important when using ST's saved key (avoids 403 errors)
+            // or for providers like Deepseek that block browser requests
+            if (this.context && this.context.ChatCompletionService && (isUsingSTKey || isCorsBlocking)) {
+                console.log(`[Sidecar AI] Testing connection via ChatCompletionService: ${provider} (${model})${isUsingSTKey ? ' (using ST saved key)' : ''}`);
 
                 try {
                     const testMessages = [{ role: 'user', content: 'test' }];
@@ -369,6 +370,11 @@ export class AIClient {
                         temperature: 0.7,
                         custom_url: apiUrl || undefined,
                     };
+
+                    // Add OpenRouter service providers if specified
+                    if (provider === 'openrouter' && Array.isArray(serviceProvider) && serviceProvider.length > 0) {
+                        requestOptions.provider = serviceProvider;
+                    }
 
                     const response = await this.context.ChatCompletionService.processRequest(
                         requestOptions,
@@ -718,7 +724,7 @@ export class AIClient {
         if (this.context && this.context.extensionSettings && this.context.extensionSettings.connectionManager) {
             const profiles = this.context.extensionSettings.connectionManager.profiles || [];
             const providerLower = provider.toLowerCase();
-            
+
             for (const profile of profiles) {
                 if (profile && profile.api?.toLowerCase() === providerLower && profile['secret-id']) {
                     console.log(`[Sidecar AI] Found connection profile with secret-id for ${provider}`);
