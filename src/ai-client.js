@@ -345,12 +345,16 @@ export class AIClient {
     async testConnection(provider, model, apiKey, apiUrl = null) {
         try {
             const chatCompletionSource = this.getChatCompletionSource(provider);
-
+            
+            // List of providers that block browser requests (CORS)
+            const corsBlockingProviders = ['deepseek', 'anthropic', 'google', 'cohere'];
+            const isCorsBlocking = corsBlockingProviders.includes(provider.toLowerCase());
+            
             // Try ChatCompletionService first (avoids CORS issues, uses server-side requests)
             // This is especially important for providers like Deepseek that block browser requests
             if (this.context && this.context.ChatCompletionService) {
                 console.log(`[Sidecar AI] Testing connection via ChatCompletionService: ${provider} (${model})`);
-
+                
                 try {
                     const testMessages = [{ role: 'user', content: 'test' }];
 
@@ -375,19 +379,43 @@ export class AIClient {
                     return { success: true, message: 'Connection successful' };
                 } catch (chatServiceError) {
                     console.warn('[Sidecar AI] ChatCompletionService test failed:', chatServiceError);
-                    // Fall through to direct API test if ChatCompletionService fails
-                    // This might happen if ST doesn't have the API key configured
+                    
+                    // For CORS-blocking providers, don't fall back to direct API
+                    if (isCorsBlocking) {
+                        const errorMsg = chatServiceError.message || String(chatServiceError);
+                        throw new Error(
+                            `ChatCompletionService failed: ${errorMsg}\n\n` +
+                            `This provider (${provider}) blocks browser requests.\n\n` +
+                            `SOLUTION: Configure ${provider} in SillyTavern's API Connection settings:\n` +
+                            `1. Go to Settings → API Connection\n` +
+                            `2. Select ${provider} as your provider\n` +
+                            `3. Enter your API key there\n` +
+                            `4. The extension will automatically use server-side requests\n\n` +
+                            `Do NOT enter the API key in the extension form - use ST's API Connection instead.`
+                        );
+                    }
+                    // For non-CORS providers, fall through to direct API test
                 }
+            } else if (isCorsBlocking) {
+                // ChatCompletionService not available and provider blocks CORS
+                throw new Error(
+                    `ChatCompletionService not available and ${provider} blocks browser requests.\n\n` +
+                    `SOLUTION: Configure ${provider} in SillyTavern's API Connection settings.\n` +
+                    `The extension requires ChatCompletionService for providers that block CORS.`
+                );
             }
 
-            // Fallback: Use direct API testing
-            // Note: This may fail with CORS for some providers (like Deepseek)
-            if (apiKey) {
+            // Fallback: Use direct API testing (only for non-CORS-blocking providers)
+            if (apiKey && !isCorsBlocking) {
                 console.log(`[Sidecar AI] Testing connection directly: ${provider} (${model})`);
                 return await this.testConnectionDirect(provider, model, apiKey, apiUrl);
             }
 
-            throw new Error('No API key provided and ChatCompletionService not available');
+            if (!apiKey && !this.context?.ChatCompletionService) {
+                throw new Error('No API key provided and ChatCompletionService not available');
+            }
+            
+            throw new Error('Unable to test connection - please configure provider in SillyTavern API Connection settings');
         } catch (error) {
             console.error('[Sidecar AI] Connection test failed:', error);
             console.error('[Sidecar AI] Error details:', {
