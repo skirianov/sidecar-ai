@@ -9,9 +9,19 @@
                 <p class="add_ons_description">Define custom prompts that execute using cheaper AI models.</p>
                 
                 <div class="add_ons_controls">
-                    <button class="menu_button" id="sidecar_create_button">
-                        <i class="fa-solid fa-plus"></i> Create Sidecar
-                    </button>
+                    <div class="add_ons_controls_left">
+                        <button class="menu_button" id="sidecar_create_button">
+                            <i class="fa-solid fa-plus"></i> Create Sidecar
+                        </button>
+                    </div>
+                    <div class="add_ons_controls_right">
+                        <button class="menu_button add_ons_button_small" id="sidecar_export_button" title="Export All Add-ons">
+                            <i class="fa-solid fa-download"></i> Export
+                        </button>
+                        <button class="menu_button add_ons_button_small" id="sidecar_import_button" title="Import Add-ons">
+                            <i class="fa-solid fa-upload"></i> Import
+                        </button>
+                    </div>
                 </div>
 
                 <div class="add_ons_list" id="add_ons_list">
@@ -187,6 +197,36 @@
             <div class="add_ons_modal_footer">
                 <button class="menu_button" id="add_ons_form_cancel">Cancel</button>
                 <button class="menu_button" id="add_ons_form_save">Save Sidecar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- History Viewer Modal -->
+    <div class="add_ons_modal" id="add_ons_history_modal" style="display: none;">
+        <div class="add_ons_modal_content" style="max-width: 900px; max-height: 90vh; overflow-y: auto;">
+            <div class="add_ons_modal_header">
+                <h3 id="add_ons_history_modal_title">Result History</h3>
+                <button class="add_ons_modal_close" id="add_ons_history_modal_close">&times;</button>
+            </div>
+            <div class="add_ons_modal_body">
+                <div id="add_ons_history_filters" style="margin-bottom: 15px; padding: 10px; background: rgba(128, 128, 128, 0.1); border-radius: 5px;">
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                        <input type="text" id="add_ons_history_search" class="text_pole" placeholder="Search results..." style="flex: 1; min-width: 200px;">
+                        <select id="add_ons_history_sort" class="text_pole" style="width: 150px;">
+                            <option value="newest">Newest First</option>
+                            <option value="oldest">Oldest First</option>
+                        </select>
+                        <button class="menu_button add_ons_button_small" id="add_ons_history_clear_filters">
+                            <i class="fa-solid fa-times"></i> Clear
+                        </button>
+                    </div>
+                </div>
+                <div id="add_ons_history_list" style="display: flex; flex-direction: column; gap: 10px;">
+                    <!-- History items will be rendered here -->
+                </div>
+            </div>
+            <div class="add_ons_modal_footer">
+                <button class="menu_button" id="add_ons_history_close">Close</button>
             </div>
         </div>
     </div>

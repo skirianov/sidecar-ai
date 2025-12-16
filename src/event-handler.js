@@ -320,9 +320,15 @@ export class EventHandler {
         } catch (error) {
             console.error('[Sidecar AI] Error processing batch group:', error);
             const messageId = this.resultFormatter.getMessageId(message);
+
+            // Create retry callback for batch
+            const retryCallback = async () => {
+                await this.processBatchGroup(addons, message);
+            };
+
             addons.forEach(addon => {
                 this.resultFormatter.hideLoadingIndicator(messageId, addon);
-                this.resultFormatter.showErrorIndicator(messageId, addon, error);
+                this.resultFormatter.showErrorIndicator(messageId, addon, error, retryCallback);
             });
         }
     }
@@ -368,7 +374,14 @@ export class EventHandler {
             console.error(`[Sidecar AI] Error processing add-on ${addon.name}:`, error);
             const messageId = this.resultFormatter.getMessageId(message);
             this.resultFormatter.hideLoadingIndicator(messageId, addon);
-            this.resultFormatter.showErrorIndicator(messageId, addon, error);
+
+            // Create retry callback
+            const retryCallback = async () => {
+                // Re-process the add-on
+                await this.processStandaloneAddon(addon, message);
+            };
+
+            this.resultFormatter.showErrorIndicator(messageId, addon, error, retryCallback);
         }
     }
 
@@ -382,7 +395,7 @@ export class EventHandler {
         if (addon.responseLocation === 'chatHistory') {
             console.log(`[Sidecar AI] Injecting into chat history for message: ${messageId}`);
             const formatted = this.resultFormatter.formatResult(addon, response, message, false);
-            this.resultFormatter.injectIntoChatHistory(messageId, addon, formatted);
+            this.resultFormatter.injectIntoChatHistory(messageId, addon, formatted, message);
         } else {
             // For outsideChatlog, inject inside chat after the message (with dropdown UI)
             // Don't wrap in extra structure - we already have details element

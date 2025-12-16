@@ -4,6 +4,7 @@ export class SettingsUI {
         this.addonManager = addonManager;
         this.aiClient = aiClient;
         this.initialized = false;
+        this.selectedAddons = new Set(); // Track selected add-ons for bulk operations
     }
 
     init() {
@@ -43,21 +44,48 @@ export class SettingsUI {
 
         if (addons.length === 0) {
             listContainer.innerHTML = '<div class="add_ons_empty"><p>No Sidecars configured. Click "Create Sidecar" to create one.</p></div>';
+            this.updateBulkActionBar();
             return;
         }
 
+        // Render header with select all checkbox
+        const header = document.createElement('div');
+        header.className = 'add_ons_list_header';
+        const allSelected = addons.length > 0 && addons.every(a => this.selectedAddons.has(a.id));
+        header.innerHTML = `
+            <div class="add_ons_list_header_content">
+                <label class="add_ons_checkbox_label">
+                    <input type="checkbox" id="add_ons_select_all" ${allSelected ? 'checked' : ''} class="add_ons_select_all_checkbox">
+                    <span>Select All</span>
+                </label>
+                <span class="add_ons_selected_count" id="add_ons_selected_count">${this.selectedAddons.size} selected</span>
+            </div>
+        `;
+        listContainer.appendChild(header);
+
         // Render add-ons
-        addons.forEach(addon => {
+        addons.forEach((addon, index) => {
             const item = document.createElement('div');
             item.className = 'add_ons_item';
+            if (this.selectedAddons.has(addon.id)) {
+                item.classList.add('add_ons_item_selected');
+            }
             item.setAttribute('data-addon-id', addon.id);
 
             const enabledBadge = addon.enabled ?
                 '<span class="add_ons_badge add_ons_badge_enabled">Enabled</span>' :
                 '<span class="add_ons_badge add_ons_badge_disabled">Disabled</span>';
 
+            const isSelected = this.selectedAddons.has(addon.id);
+
             item.innerHTML = `
                 <div class="add_ons_item_header">
+                    <div class="add_ons_item_select">
+                        <label class="add_ons_checkbox_label">
+                            <input type="checkbox" class="add_ons_item_checkbox" data-addon-id="${addon.id}" ${isSelected ? 'checked' : ''}>
+                            <span></span>
+                        </label>
+                    </div>
                     <div class="add_ons_item_info">
                         <h4>${addon.name || 'Unnamed Sidecar'}</h4>
                         <span class="add_ons_item_meta">
@@ -68,12 +96,24 @@ export class SettingsUI {
                         </span>
                     </div>
                     <div class="add_ons_item_actions">
+                        ${index > 0 ? `<button class="menu_button add_ons_button_small" data-action="move-up" data-addon-id="${addon.id}" title="Move Up">
+                            <i class="fa-solid fa-arrow-up"></i>
+                        </button>` : ''}
+                        ${index < addons.length - 1 ? `<button class="menu_button add_ons_button_small" data-action="move-down" data-addon-id="${addon.id}" title="Move Down">
+                            <i class="fa-solid fa-arrow-down"></i>
+                        </button>` : ''}
                         <label class="add_ons_toggle" title="Enable/Disable">
                             <input type="checkbox" ${addon.enabled ? 'checked' : ''} data-addon-id="${addon.id}" class="add_ons_enable_toggle">
                             <span class="add_ons_toggle_slider"></span>
                         </label>
                         <button class="menu_button add_ons_button_small" data-action="edit" data-addon-id="${addon.id}">
                             <i class="fa-solid fa-edit"></i> Edit
+                        </button>
+                        <button class="menu_button add_ons_button_small" data-action="history" data-addon-id="${addon.id}" title="View History">
+                            <i class="fa-solid fa-history"></i> History
+                        </button>
+                        <button class="menu_button add_ons_button_small" data-action="duplicate" data-addon-id="${addon.id}" title="Duplicate">
+                            <i class="fa-solid fa-copy"></i>
                         </button>
                         <button class="menu_button add_ons_button_small add_ons_button_danger" data-action="delete" data-addon-id="${addon.id}">
                             <i class="fa-solid fa-trash"></i> Delete
@@ -85,6 +125,9 @@ export class SettingsUI {
 
             listContainer.appendChild(item);
         });
+
+        // Update bulk action bar
+        this.updateBulkActionBar();
     }
 
     bindEvents() {
@@ -95,6 +138,20 @@ export class SettingsUI {
             e.preventDefault();
             e.stopPropagation();
             self.openModal();
+        });
+
+        // Export button
+        $(document).off('click.sidecar', '#sidecar_export_button').on('click.sidecar', '#sidecar_export_button', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.handleExport();
+        });
+
+        // Import button
+        $(document).off('click.sidecar', '#sidecar_import_button').on('click.sidecar', '#sidecar_import_button', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.handleImport();
         });
 
         // Modal close
@@ -193,6 +250,139 @@ export class SettingsUI {
             } else {
                 historyDepthGroup.slideUp(200);
             }
+        });
+
+        // Bulk selection: Select all checkbox
+        $(document).off('change.sidecar', '#add_ons_select_all').on('change.sidecar', '#add_ons_select_all', function (e) {
+            e.stopPropagation();
+            const checked = $(this).is(':checked');
+            const checkboxes = $('.add_ons_item_checkbox');
+            checkboxes.prop('checked', checked);
+
+            if (checked) {
+                checkboxes.each(function () {
+                    const addonId = $(this).data('addon-id');
+                    self.selectedAddons.add(addonId);
+                });
+            } else {
+                self.selectedAddons.clear();
+            }
+
+            self.updateBulkActionBar();
+            self.updateSelectedCount();
+        });
+
+        // Bulk selection: Individual item checkbox
+        $(document).off('change.sidecar', '.add_ons_item_checkbox').on('change.sidecar', '.add_ons_item_checkbox', function (e) {
+            e.stopPropagation();
+            const addonId = $(this).data('addon-id');
+            const checked = $(this).is(':checked');
+
+            if (checked) {
+                self.selectedAddons.add(addonId);
+            } else {
+                self.selectedAddons.delete(addonId);
+            }
+
+            // Update select all checkbox state
+            const allAddons = self.addonManager.getAllAddons();
+            const allSelected = allAddons.length > 0 && allAddons.every(a => self.selectedAddons.has(a.id));
+            $('#add_ons_select_all').prop('checked', allSelected);
+
+            // Update item visual state
+            const item = $(this).closest('.add_ons_item');
+            if (checked) {
+                item.addClass('add_ons_item_selected');
+            } else {
+                item.removeClass('add_ons_item_selected');
+            }
+
+            self.updateBulkActionBar();
+            self.updateSelectedCount();
+        });
+
+        // Bulk actions
+        $(document).off('click.sidecar', '#add_ons_bulk_enable').on('click.sidecar', '#add_ons_bulk_enable', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.bulkEnable();
+        });
+
+        $(document).off('click.sidecar', '#add_ons_bulk_disable').on('click.sidecar', '#add_ons_bulk_disable', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.bulkDisable();
+        });
+
+        $(document).off('click.sidecar', '#add_ons_bulk_delete').on('click.sidecar', '#add_ons_bulk_delete', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.bulkDelete();
+        });
+
+        $(document).off('click.sidecar', '#add_ons_bulk_duplicate').on('click.sidecar', '#add_ons_bulk_duplicate', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.bulkDuplicate();
+        });
+
+        $(document).off('click.sidecar', '#add_ons_bulk_clear').on('click.sidecar', '#add_ons_bulk_clear', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.clearSelection();
+        });
+
+        // History button
+        $(document).off('click.sidecar', '[data-action="history"]').on('click.sidecar', '[data-action="history"]', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const addonId = $(this).data('addon-id');
+            self.showHistoryViewer(addonId);
+        });
+
+        // Duplicate button
+        $(document).off('click.sidecar', '[data-action="duplicate"]').on('click.sidecar', '[data-action="duplicate"]', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const addonId = $(this).data('addon-id');
+            self.duplicateAddon(addonId);
+        });
+
+        // Move up/down buttons
+        $(document).off('click.sidecar', '[data-action="move-up"]').on('click.sidecar', '[data-action="move-up"]', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const addonId = $(this).data('addon-id');
+            self.moveAddonUp(addonId);
+        });
+
+        $(document).off('click.sidecar', '[data-action="move-down"]').on('click.sidecar', '[data-action="move-down"]', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const addonId = $(this).data('addon-id');
+            self.moveAddonDown(addonId);
+        });
+
+        // History viewer
+        $(document).off('click.sidecar', '#add_ons_history_modal_close, #add_ons_history_close').on('click.sidecar', '#add_ons_history_modal_close, #add_ons_history_close', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            $('#add_ons_history_modal').hide();
+        });
+
+        // History filters
+        $(document).off('input.sidecar', '#add_ons_history_search').on('input.sidecar', '#add_ons_history_search', function () {
+            self.filterHistory();
+        });
+
+        $(document).off('change.sidecar', '#add_ons_history_sort').on('change.sidecar', '#add_ons_history_sort', function () {
+            self.filterHistory();
+        });
+
+        $(document).off('click.sidecar', '#add_ons_history_clear_filters').on('click.sidecar', '#add_ons_history_clear_filters', function () {
+            $('#add_ons_history_search').val('');
+            $('#add_ons_history_sort').val('newest');
+            self.filterHistory();
         });
 
     }
@@ -1166,5 +1356,467 @@ export class SettingsUI {
 
         // Re-render the list
         this.renderAddonsList();
+    }
+
+    updateSelectedCount() {
+        const count = this.selectedAddons.size;
+        $('#add_ons_selected_count').text(`${count} selected`);
+    }
+
+    updateBulkActionBar() {
+        const controlsContainer = $('.add_ons_controls');
+        let bulkBar = $('#add_ons_bulk_action_bar');
+
+        if (this.selectedAddons.size > 0) {
+            if (bulkBar.length === 0) {
+                bulkBar = $('<div id="add_ons_bulk_action_bar" class="add_ons_bulk_action_bar"></div>');
+                bulkBar.html(`
+                    <div class="add_ons_bulk_action_content">
+                        <span class="add_ons_bulk_action_info">${this.selectedAddons.size} item(s) selected</span>
+                        <div class="add_ons_bulk_action_buttons">
+                            <button class="menu_button add_ons_button_small" id="add_ons_bulk_enable" title="Enable Selected">
+                                <i class="fa-solid fa-check"></i> Enable
+                            </button>
+                            <button class="menu_button add_ons_button_small" id="add_ons_bulk_disable" title="Disable Selected">
+                                <i class="fa-solid fa-times"></i> Disable
+                            </button>
+                            <button class="menu_button add_ons_button_small" id="add_ons_bulk_duplicate" title="Duplicate Selected">
+                                <i class="fa-solid fa-copy"></i> Duplicate
+                            </button>
+                            <button class="menu_button add_ons_button_small add_ons_button_danger" id="add_ons_bulk_delete" title="Delete Selected">
+                                <i class="fa-solid fa-trash"></i> Delete
+                            </button>
+                            <button class="menu_button add_ons_button_small" id="add_ons_bulk_clear" title="Clear Selection">
+                                <i class="fa-solid fa-times-circle"></i> Clear
+                            </button>
+                        </div>
+                    </div>
+                `);
+                controlsContainer.after(bulkBar);
+            } else {
+                bulkBar.find('.add_ons_bulk_action_info').text(`${this.selectedAddons.size} item(s) selected`);
+            }
+            bulkBar.show();
+        } else {
+            if (bulkBar.length > 0) {
+                bulkBar.hide();
+            }
+        }
+    }
+
+    clearSelection() {
+        this.selectedAddons.clear();
+        $('.add_ons_item_checkbox').prop('checked', false);
+        $('#add_ons_select_all').prop('checked', false);
+        $('.add_ons_item').removeClass('add_ons_item_selected');
+        this.updateBulkActionBar();
+        this.updateSelectedCount();
+    }
+
+    bulkEnable() {
+        if (this.selectedAddons.size === 0) {
+            alert('Please select at least one add-on.');
+            return;
+        }
+
+        const count = this.addonManager.bulkEnable(Array.from(this.selectedAddons));
+        if (count > 0) {
+            this.clearSelection();
+            this.refreshSettings();
+            console.log(`[Sidecar AI] Enabled ${count} add-on(s)`);
+        }
+    }
+
+    bulkDisable() {
+        if (this.selectedAddons.size === 0) {
+            alert('Please select at least one add-on.');
+            return;
+        }
+
+        const count = this.addonManager.bulkDisable(Array.from(this.selectedAddons));
+        if (count > 0) {
+            this.clearSelection();
+            this.refreshSettings();
+            console.log(`[Sidecar AI] Disabled ${count} add-on(s)`);
+        }
+    }
+
+    bulkDelete() {
+        if (this.selectedAddons.size === 0) {
+            alert('Please select at least one add-on.');
+            return;
+        }
+
+        const count = this.selectedAddons.size;
+        if (!confirm(`Are you sure you want to delete ${count} add-on(s)? This cannot be undone.`)) {
+            return;
+        }
+
+        const deleted = this.addonManager.bulkDelete(Array.from(this.selectedAddons));
+        if (deleted > 0) {
+            this.clearSelection();
+            this.refreshSettings();
+            console.log(`[Sidecar AI] Deleted ${deleted} add-on(s)`);
+        }
+    }
+
+    bulkDuplicate() {
+        if (this.selectedAddons.size === 0) {
+            alert('Please select at least one add-on.');
+            return;
+        }
+
+        const duplicated = this.addonManager.bulkDuplicate(Array.from(this.selectedAddons));
+        if (duplicated.length > 0) {
+            this.clearSelection();
+            this.refreshSettings();
+            console.log(`[Sidecar AI] Duplicated ${duplicated.length} add-on(s)`);
+        }
+    }
+
+    duplicateAddon(addonId) {
+        const duplicated = this.addonManager.duplicateAddon(addonId);
+        if (duplicated) {
+            this.refreshSettings();
+            console.log(`[Sidecar AI] Duplicated add-on: ${duplicated.name}`);
+        }
+    }
+
+    moveAddonUp(addonId) {
+        if (this.addonManager.moveAddonUp(addonId)) {
+            this.refreshSettings();
+        }
+    }
+
+    moveAddonDown(addonId) {
+        if (this.addonManager.moveAddonDown(addonId)) {
+            this.refreshSettings();
+        }
+    }
+
+    showHistoryViewer(addonId) {
+        const addon = this.addonManager.getAddon(addonId);
+        if (!addon) {
+            alert('Add-on not found');
+            return;
+        }
+
+        // Get result formatter from context (we need to access it)
+        // For now, we'll create a temporary one or access it differently
+        // Since we don't have direct access, we'll need to get it from window or context
+        let resultFormatter = null;
+        if (window.addOnsExtension && window.addOnsExtension.getEventHandler) {
+            const eventHandler = window.addOnsExtension.getEventHandler();
+            if (eventHandler && eventHandler.resultFormatter) {
+                resultFormatter = eventHandler.resultFormatter;
+            }
+        }
+
+        if (!resultFormatter) {
+            alert('Unable to access result formatter. Please refresh the page.');
+            return;
+        }
+
+        // Get all results for this add-on
+        const results = resultFormatter.getAllResultsForAddon(addonId);
+
+        // Set modal title
+        $('#add_ons_history_modal_title').text(`Result History: ${addon.name} (${results.length} results)`);
+
+        // Store current addon and results for filtering
+        this.currentHistoryAddon = addon;
+        this.currentHistoryResults = results;
+
+        // Render history list
+        this.renderHistoryList(results);
+
+        // Show modal
+        $('#add_ons_history_modal').show();
+    }
+
+    renderHistoryList(results) {
+        const listContainer = $('#add_ons_history_list');
+        listContainer.empty();
+
+        if (results.length === 0) {
+            listContainer.html('<div style="text-align: center; padding: 20px; color: rgba(255, 255, 255, 0.5);">No results found for this add-on.</div>');
+            return;
+        }
+
+        results.forEach((result, index) => {
+            const item = document.createElement('div');
+            item.className = 'add_ons_history_item';
+            item.style.cssText = 'padding: 12px; border: 1px solid var(--SmartThemeBorderColor, #555); border-radius: 5px; background: rgba(128, 128, 128, 0.05);';
+
+            const date = new Date(result.timestamp);
+            const dateStr = date.toLocaleString();
+
+            item.innerHTML = `
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px;">
+                    <div>
+                        <strong style="color: #eee;">Result #${results.length - index}</strong>
+                        ${result.edited ? '<span style="margin-left: 8px; padding: 2px 6px; background: rgba(255, 193, 7, 0.2); border: 1px solid rgba(255, 193, 7, 0.5); border-radius: 3px; color: #ffc107; font-size: 0.8em;">EDITED</span>' : ''}
+                        <div style="font-size: 0.85em; color: rgba(255, 255, 255, 0.5); margin-top: 4px;">${dateStr}</div>
+                    </div>
+                    <div style="display: flex; gap: 5px;">
+                        <button class="menu_button add_ons_button_small" data-action="view-result" data-index="${index}" title="View Full">
+                            <i class="fa-solid fa-eye"></i>
+                        </button>
+                        <button class="menu_button add_ons_button_small add_ons_button_danger" data-action="delete-result" data-index="${index}" title="Delete">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div style="font-size: 0.9em; color: rgba(255, 255, 255, 0.7); margin-bottom: 4px;">
+                    <strong>Message:</strong> ${result.messagePreview || 'N/A'}
+                </div>
+                <div style="font-size: 0.85em; color: rgba(255, 255, 255, 0.6); max-height: 60px; overflow: hidden; text-overflow: ellipsis;">
+                    ${result.content.substring(0, 150)}${result.content.length > 150 ? '...' : ''}
+                </div>
+            `;
+
+            // View button
+            $(item).find('[data-action="view-result"]').on('click', () => {
+                this.viewFullResult(result, index);
+            });
+
+            // Delete button
+            $(item).find('[data-action="delete-result"]').on('click', () => {
+                if (confirm('Are you sure you want to delete this result?')) {
+                    this.deleteHistoryResult(result, index);
+                }
+            });
+
+            listContainer.append(item);
+        });
+    }
+
+    viewFullResult(result, index) {
+        const modal = $('<div class="add_ons_modal" style="display: flex;"><div class="add_ons_modal_content" style="max-width: 800px;"><div class="add_ons_modal_header"><h3>Full Result</h3><button class="add_ons_modal_close">&times;</button></div><div class="add_ons_modal_body"><pre style="white-space: pre-wrap; word-wrap: break-word; max-height: 60vh; overflow-y: auto; background: #2e2e2e; padding: 15px; border-radius: 5px;">' +
+            this.escapeHtml(result.content) +
+            '</pre></div><div class="add_ons_modal_footer"><button class="menu_button" data-close-view>Close</button></div></div></div>');
+
+        modal.find('.add_ons_modal_close, [data-close-view]').on('click', () => {
+            modal.remove();
+        });
+
+        $('body').append(modal);
+        modal.show();
+    }
+
+    deleteHistoryResult(result, index) {
+        // Get result formatter
+        let resultFormatter = null;
+        if (window.addOnsExtension && window.addOnsExtension.getEventHandler) {
+            const eventHandler = window.addOnsExtension.getEventHandler();
+            if (eventHandler && eventHandler.resultFormatter) {
+                resultFormatter = eventHandler.resultFormatter;
+            }
+        }
+
+        if (!resultFormatter) {
+            alert('Unable to access result formatter.');
+            return;
+        }
+
+        // Find message in chat log
+        const chatLog = this.context.chat || this.context.chatLog || [];
+        const message = chatLog[result.messageIndex];
+
+        if (message && resultFormatter.deleteResultFromMetadata(message, result.addonId)) {
+            // Save chat
+            if (this.context.saveChat) {
+                this.context.saveChat();
+            } else if (this.context.saveSettingsDebounced) {
+                this.context.saveSettingsDebounced();
+            }
+
+            // Remove from current results
+            this.currentHistoryResults.splice(index, 1);
+            this.renderHistoryList(this.currentHistoryResults);
+            console.log(`[Sidecar AI] Deleted result from history`);
+        } else {
+            alert('Failed to delete result. It may have already been removed.');
+        }
+    }
+
+    filterHistory() {
+        if (!this.currentHistoryResults) {
+            return;
+        }
+
+        const searchTerm = $('#add_ons_history_search').val().toLowerCase();
+        const sortOrder = $('#add_ons_history_sort').val();
+
+        let filtered = this.currentHistoryResults.filter(result => {
+            if (!searchTerm) return true;
+            return result.content.toLowerCase().includes(searchTerm) ||
+                result.messagePreview.toLowerCase().includes(searchTerm);
+        });
+
+        // Sort
+        if (sortOrder === 'oldest') {
+            filtered.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        } else {
+            filtered.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        }
+
+        this.renderHistoryList(filtered);
+    }
+
+    escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    handleExport() {
+        try {
+            // Check if there are selected add-ons for bulk export
+            const selectedIds = this.selectedAddons.size > 0
+                ? Array.from(this.selectedAddons)
+                : null;
+
+            // Ask if user wants to include API keys
+            const includeApiKeys = confirm(
+                'Include API keys in export?\n\n' +
+                'Click OK to include API keys (less secure but convenient).\n' +
+                'Click Cancel to exclude API keys (more secure, you\'ll need to re-enter them).'
+            );
+
+            // Export add-ons
+            const exportData = this.addonManager.exportAddons(selectedIds, includeApiKeys);
+
+            // Convert to JSON string
+            const jsonString = JSON.stringify(exportData, null, 2);
+
+            // Create blob and download
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `sidecar-addons-${new Date().toISOString().split('T')[0]}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+
+            console.log(`[Sidecar AI] Exported ${exportData.addons.length} add-on(s)`);
+
+            // Show success message
+            if (selectedIds) {
+                alert(`Successfully exported ${exportData.addons.length} selected add-on(s).`);
+            } else {
+                alert(`Successfully exported ${exportData.addons.length} add-on(s).`);
+            }
+        } catch (error) {
+            console.error('[Sidecar AI] Export error:', error);
+            alert('Error exporting add-ons: ' + error.message);
+        }
+    }
+
+    handleImport() {
+        // Create file input element
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.json';
+        fileInput.style.display = 'none';
+
+        fileInput.onchange = (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                try {
+                    const importData = JSON.parse(event.target.result);
+                    this.processImport(importData);
+                } catch (error) {
+                    console.error('[Sidecar AI] Import parse error:', error);
+                    alert('Error parsing import file: ' + error.message + '\n\nPlease ensure the file is valid JSON.');
+                }
+            };
+            reader.readAsText(file);
+        };
+
+        // Also allow paste from clipboard
+        const pasteOption = confirm(
+            'Import from file or clipboard?\n\n' +
+            'OK = Choose file\n' +
+            'Cancel = Paste from clipboard'
+        );
+
+        if (pasteOption) {
+            document.body.appendChild(fileInput);
+            fileInput.click();
+            document.body.removeChild(fileInput);
+        } else {
+            // Paste from clipboard
+            const pastePrompt = prompt(
+                'Paste the JSON export data below:',
+                ''
+            );
+
+            if (pastePrompt && pastePrompt.trim()) {
+                try {
+                    const importData = JSON.parse(pastePrompt.trim());
+                    this.processImport(importData);
+                } catch (error) {
+                    console.error('[Sidecar AI] Import parse error:', error);
+                    alert('Error parsing pasted data: ' + error.message + '\n\nPlease ensure the data is valid JSON.');
+                }
+            }
+        }
+    }
+
+    processImport(importData) {
+        try {
+            // Validate import data
+            if (!importData || !importData.addons || !Array.isArray(importData.addons)) {
+                throw new Error('Invalid import data: addons array is required');
+            }
+
+            // Show preview and ask for merge mode
+            const addonCount = importData.addons.length;
+            const addonNames = importData.addons.slice(0, 5).map(a => a.name || 'Unnamed').join(', ');
+            const moreText = addonCount > 5 ? ` and ${addonCount - 5} more` : '';
+
+            const mergeMode = confirm(
+                `Import ${addonCount} add-on(s):\n${addonNames}${moreText}\n\n` +
+                `How would you like to import?\n\n` +
+                `OK = Merge (add new, keep existing)\n` +
+                `Cancel = Replace (replace all existing add-ons)`
+            ) ? 'merge' : 'replace';
+
+            // Confirm replace mode
+            if (mergeMode === 'replace') {
+                if (!confirm(`WARNING: This will replace ALL existing add-ons with the imported ones.\n\nAre you sure?`)) {
+                    return;
+                }
+            }
+
+            // Import add-ons
+            const result = this.addonManager.importAddons(importData, mergeMode);
+
+            // Show result
+            let message = `Import completed!\n\n`;
+            message += `Imported: ${result.imported}\n`;
+            if (result.skipped > 0) {
+                message += `Skipped: ${result.skipped}\n`;
+            }
+            if (result.errors.length > 0) {
+                message += `Errors: ${result.errors.length}\n`;
+                console.error('[Sidecar AI] Import errors:', result.errors);
+            }
+
+            alert(message);
+
+            // Refresh UI
+            this.clearSelection();
+            this.refreshSettings();
+        } catch (error) {
+            console.error('[Sidecar AI] Import error:', error);
+            alert('Error importing add-ons: ' + error.message);
+        }
     }
 }

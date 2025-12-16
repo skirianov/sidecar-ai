@@ -165,11 +165,114 @@
     flex-shrink: 0;
 }
 
+/* Bulk Selection */
+#sidecar_ai_settings .add_ons_list_header {
+    padding: 10px 12px;
+    background: rgba(128, 128, 128, 0.1);
+    border: 1px solid var(--SmartThemeBorderColor, #555);
+    border-radius: 5px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+#sidecar_ai_settings .add_ons_list_header_content {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    width: 100%;
+}
+
+#sidecar_ai_settings .add_ons_selected_count {
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+}
+
+#sidecar_ai_settings .add_ons_item_select {
+    display: flex;
+    align-items: center;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+
+#sidecar_ai_settings .add_ons_item_selected {
+    border-color: var(--SmartThemeEmColor, #9fc) !important;
+    background: rgba(159, 204, 255, 0.05) !important;
+}
+
+#sidecar_ai_settings .add_ons_checkbox_label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+#sidecar_ai_settings .add_ons_checkbox_label input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: var(--SmartThemeEmColor, #9fc);
+}
+
+#sidecar_ai_settings .add_ons_item_info {
+    flex: 1;
+    min-width: 0;
+}
+
+/* Bulk Action Bar */
+#sidecar_ai_settings .add_ons_bulk_action_bar {
+    margin: 10px 0;
+    padding: 12px;
+    background: rgba(159, 204, 255, 0.1);
+    border: 2px solid var(--SmartThemeEmColor, #9fc);
+    border-radius: 5px;
+    display: none;
+}
+
+#sidecar_ai_settings .add_ons_bulk_action_bar.show {
+    display: block;
+}
+
+#sidecar_ai_settings .add_ons_bulk_action_content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+#sidecar_ai_settings .add_ons_bulk_action_info {
+    font-weight: 600;
+    color: var(--SmartThemeEmColor, #9fc);
+    font-size: 0.95em;
+}
+
+#sidecar_ai_settings .add_ons_bulk_action_buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
 /* Controls */
 #sidecar_ai_settings .add_ons_controls {
     display: flex;
-    justify-content: flex-end;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 10px;
+    gap: 10px;
+}
+
+#sidecar_ai_settings .add_ons_controls_left {
+    display: flex;
+    gap: 8px;
+}
+
+#sidecar_ai_settings .add_ons_controls_right {
+    display: flex;
+    gap: 8px;
 }
 
 /* Modal - These need to be top level as they might be appended to body, 

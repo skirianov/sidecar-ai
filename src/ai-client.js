@@ -7,6 +7,13 @@
 export class AIClient {
     constructor(context) {
         this.context = context;
+        // Retry configuration
+        this.retryConfig = {
+            maxRetries: 3,
+            initialDelay: 1000, // 1 second
+            maxDelay: 10000, // 10 seconds
+            backoffMultiplier: 2
+        };
     }
 
     /**
@@ -28,8 +35,9 @@ export class AIClient {
 
     /**
      * Send single add-on request to AI using SillyTavern's ChatCompletionService
+     * Includes automatic retry with exponential backoff
      */
-    async sendToAI(addon, prompt) {
+    async sendToAI(addon, prompt, retryCount = 0) {
         try {
             const provider = addon.aiProvider || 'openai';
             const model = addon.aiModel || 'gpt-3.5-turbo';
@@ -38,7 +46,11 @@ export class AIClient {
 
             // Use SillyTavern's ChatCompletionService - it handles everything!
             if (this.context && this.context.ChatCompletionService) {
-                console.log(`[Sidecar AI] Using SillyTavern ChatCompletionService for ${provider} (${model})`);
+                if (retryCount === 0) {
+                    console.log(`[Sidecar AI] Using SillyTavern ChatCompletionService for ${provider} (${model})`);
+                } else {
+                    console.log(`[Sidecar AI] Retry attempt ${retryCount}/${this.retryConfig.maxRetries} for ${addon.name}`);
+                }
 
                 // Build messages array with system instruction
                 let messages;
@@ -90,9 +102,69 @@ export class AIClient {
             console.warn('[Sidecar AI] ChatCompletionService not available, using fallback');
             return await this.sendDirectAPIFallback(addon, prompt, provider, model, apiUrl);
         } catch (error) {
-            console.error(`[Sidecar AI] Error sending to AI (${addon.name}):`, error);
+            // Check if we should retry
+            if (this.shouldRetry(error, retryCount)) {
+                const delay = this.calculateRetryDelay(retryCount);
+                console.log(`[Sidecar AI] Retrying ${addon.name} after ${delay}ms (attempt ${retryCount + 1}/${this.retryConfig.maxRetries})`);
+
+                await this.sleep(delay);
+                return await this.sendToAI(addon, prompt, retryCount + 1);
+            }
+
+            // Store retry count in error for UI display
+            error.retryCount = retryCount;
+            error.addonName = addon.name;
+            console.error(`[Sidecar AI] Error sending to AI (${addon.name}) after ${retryCount} retries:`, error);
             throw error;
         }
+    }
+
+    /**
+     * Determine if an error should be retried
+     */
+    shouldRetry(error, retryCount) {
+        // Don't retry if we've exceeded max retries
+        if (retryCount >= this.retryConfig.maxRetries) {
+            return false;
+        }
+
+        // Don't retry on 4xx errors (except 429 rate limit)
+        if (error.status || error.statusCode) {
+            const status = error.status || error.statusCode;
+            if (status >= 400 && status < 500 && status !== 429) {
+                return false; // Client errors (except rate limit)
+            }
+        }
+
+        // Retry on network errors, timeouts, rate limits, and 5xx errors
+        const errorMessage = (error.message || '').toLowerCase();
+        const isNetworkError = errorMessage.includes('network') ||
+            errorMessage.includes('fetch') ||
+            errorMessage.includes('timeout') ||
+            errorMessage.includes('connection');
+        const isRateLimit = error.status === 429 || error.statusCode === 429 || errorMessage.includes('rate limit');
+        const isServerError = (error.status >= 500 && error.status < 600) ||
+            (error.statusCode >= 500 && error.statusCode < 600);
+
+        return isNetworkError || isRateLimit || isServerError;
+    }
+
+    /**
+     * Calculate retry delay using exponential backoff
+     */
+    calculateRetryDelay(retryCount) {
+        const delay = Math.min(
+            this.retryConfig.initialDelay * Math.pow(this.retryConfig.backoffMultiplier, retryCount),
+            this.retryConfig.maxDelay
+        );
+        return delay;
+    }
+
+    /**
+     * Sleep utility for retry delays
+     */
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
     }
 
     /**

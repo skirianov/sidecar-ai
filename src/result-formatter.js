@@ -204,7 +204,7 @@ export class ResultFormatter {
     /**
      * Inject result into chat history as HTML comment
      */
-    injectIntoChatHistory(messageId, addon, formattedResult) {
+    injectIntoChatHistory(messageId, addon, formattedResult, message = null) {
         try {
             // Find the message element
             const messageElement = this.findMessageElement(messageId);
@@ -218,14 +218,53 @@ export class ResultFormatter {
                 messageElement.querySelector('.message') ||
                 messageElement;
 
-            // Create HTML comment
-            const comment = `<!-- addon-result:${addon.id} -->${formattedResult}<!-- /addon-result:${addon.id} -->`;
+            // Check if result already exists
+            const existingResult = contentArea.querySelector(`.addon-result-chathistory-${addon.id}`);
+            if (existingResult) {
+                // Update existing result
+                existingResult.querySelector('.addon-result-content-text').innerHTML = formattedResult;
+                return true;
+            }
+
+            // Create result wrapper
+            const resultWrapper = document.createElement('div');
+            resultWrapper.className = `addon-result-chathistory addon-result-chathistory-${addon.id}`;
+            resultWrapper.style.cssText = 'margin-top: 10px; padding: 8px; background: rgba(128, 128, 128, 0.1) !important; background-color: rgba(128, 128, 128, 0.1) !important; border: 1px solid rgba(128, 128, 128, 0.3) !important; border-radius: 3px !important; position: relative;';
+
+            const resultContent = document.createElement('div');
+            resultContent.className = 'addon-result-content-text';
+            resultContent.innerHTML = formattedResult;
+            resultWrapper.appendChild(resultContent);
+
+            // Add edit button
+            const editButton = document.createElement('button');
+            editButton.className = 'addon-result-edit-button';
+            editButton.style.cssText = 'position: absolute; top: 5px; right: 5px; padding: 4px 8px; background: rgba(128, 128, 128, 0.2) !important; background-color: rgba(128, 128, 128, 0.2) !important; border: 1px solid rgba(128, 128, 128, 0.4) !important; border-radius: 3px !important; color: rgba(255, 255, 255, 0.7) !important; cursor: pointer; font-size: 0.8em; display: none;';
+            editButton.innerHTML = '<i class="fa-solid fa-edit"></i>';
+            editButton.title = 'Edit result';
+            resultWrapper.appendChild(editButton);
+
+            // Show edit button on hover
+            resultWrapper.addEventListener('mouseenter', () => {
+                editButton.style.display = 'block';
+            });
+            resultWrapper.addEventListener('mouseleave', () => {
+                if (!resultWrapper.classList.contains('editing')) {
+                    editButton.style.display = 'none';
+                }
+            });
+
+            // Edit functionality
+            editButton.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.enableEditMode(resultWrapper, addon, messageId, formattedResult, message);
+            });
 
             // Append to message content
             if (contentArea.innerHTML) {
-                contentArea.innerHTML += comment;
-            } else if (contentArea.textContent !== undefined) {
-                contentArea.textContent += formattedResult;
+                contentArea.appendChild(resultWrapper);
+            } else {
+                contentArea.appendChild(resultWrapper);
             }
 
             console.log(`[Add-Ons Extension] Injected result into chat history for: ${addon.name}`);
@@ -396,7 +435,7 @@ export class ResultFormatter {
      * Show error indicator
      * CRITICAL: Only attaches to AI messages, not user messages
      */
-    showErrorIndicator(messageId, addon, error) {
+    showErrorIndicator(messageId, addon, error, retryCallback = null) {
         try {
             // Always find the latest AI message element
             const messageElement = this.findAIMessageElement();
@@ -427,10 +466,55 @@ export class ResultFormatter {
                 }
             }
 
+            // Remove existing error indicator if present
+            const existingError = sidecarContainer.querySelector(`.sidecar-error-${addon.id}`);
+            if (existingError) {
+                existingError.remove();
+            }
+
+            const retryCount = error.retryCount || 0;
+            const errorMessage = error.message || String(error);
+            const retryInfo = retryCount > 0 ? ` (after ${retryCount} retries)` : '';
+
             const errorDiv = document.createElement('div');
             errorDiv.className = `sidecar-error sidecar-error-${addon.id}`;
-            errorDiv.style.cssText = 'padding: 8px; color: #ff6b6b !important; background: rgba(255, 107, 107, 0.1) !important; background-color: rgba(255, 107, 107, 0.1) !important; border: 1px solid rgba(255, 107, 107, 0.3) !important; border-radius: 3px !important;';
-            errorDiv.innerHTML = `<i class="fa-solid fa-exclamation-triangle"></i> Error processing ${addon.name}: ${error.message || error}`;
+            errorDiv.style.cssText = 'padding: 8px; color: #ff6b6b !important; background: rgba(255, 107, 107, 0.1) !important; background-color: rgba(255, 107, 107, 0.1) !important; border: 1px solid rgba(255, 107, 107, 0.3) !important; border-radius: 3px !important; display: flex; align-items: center; justify-content: space-between; gap: 10px;';
+
+            const errorContent = document.createElement('div');
+            errorContent.style.cssText = 'flex: 1;';
+            errorContent.innerHTML = `<i class="fa-solid fa-exclamation-triangle"></i> Error processing ${addon.name}${retryInfo}: ${errorMessage}`;
+
+            errorDiv.appendChild(errorContent);
+
+            // Add retry button if callback provided
+            if (retryCallback) {
+                const retryButton = document.createElement('button');
+                retryButton.className = 'sidecar-retry-button';
+                retryButton.style.cssText = 'padding: 4px 12px; background: rgba(255, 107, 107, 0.2) !important; background-color: rgba(255, 107, 107, 0.2) !important; border: 1px solid rgba(255, 107, 107, 0.5) !important; border-radius: 3px !important; color: #ff6b6b !important; cursor: pointer; font-size: 0.85em; white-space: nowrap;';
+                retryButton.innerHTML = '<i class="fa-solid fa-redo"></i> Retry';
+                retryButton.title = 'Retry this request';
+
+                retryButton.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    retryButton.disabled = true;
+                    retryButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Retrying...';
+
+                    try {
+                        await retryCallback();
+                        // If successful, the error will be replaced by the result
+                        errorDiv.remove();
+                    } catch (retryError) {
+                        // Update error with new retry count
+                        const newRetryCount = retryError.retryCount || retryCount + 1;
+                        errorContent.innerHTML = `<i class="fa-solid fa-exclamation-triangle"></i> Error processing ${addon.name} (after ${newRetryCount} retries): ${retryError.message || retryError}`;
+                        retryButton.disabled = false;
+                        retryButton.innerHTML = '<i class="fa-solid fa-redo"></i> Retry';
+                    }
+                });
+
+                errorDiv.appendChild(retryButton);
+            }
+
             sidecarContainer.appendChild(errorDiv);
         } catch (err) {
             console.error(`[Sidecar AI] Error showing error indicator:`, err);
@@ -503,8 +587,37 @@ export class ResultFormatter {
                 // Append new result
                 const resultDiv = document.createElement('div');
                 resultDiv.className = 'addon-result-item';
-                resultDiv.style.cssText = 'background: transparent !important; background-color: transparent !important; color: #eee !important;';
-                resultDiv.innerHTML = formattedResult;
+                resultDiv.style.cssText = 'background: transparent !important; background-color: transparent !important; color: #eee !important; position: relative;';
+
+                // Create result content wrapper
+                const resultContent = document.createElement('div');
+                resultContent.className = 'addon-result-content-text';
+                resultContent.innerHTML = formattedResult;
+                resultDiv.appendChild(resultContent);
+
+                // Add edit button
+                const editButton = document.createElement('button');
+                editButton.className = 'addon-result-edit-button';
+                editButton.style.cssText = 'position: absolute; top: 5px; right: 5px; padding: 4px 8px; background: rgba(128, 128, 128, 0.2) !important; background-color: rgba(128, 128, 128, 0.2) !important; border: 1px solid rgba(128, 128, 128, 0.4) !important; border-radius: 3px !important; color: rgba(255, 255, 255, 0.7) !important; cursor: pointer; font-size: 0.8em; display: none;';
+                editButton.innerHTML = '<i class="fa-solid fa-edit"></i>';
+                editButton.title = 'Edit result';
+                resultDiv.appendChild(editButton);
+
+                // Show edit button on hover
+                resultDiv.addEventListener('mouseenter', () => {
+                    editButton.style.display = 'block';
+                });
+                resultDiv.addEventListener('mouseleave', () => {
+                    if (!resultDiv.classList.contains('editing')) {
+                        editButton.style.display = 'none';
+                    }
+                });
+
+                // Edit functionality
+                editButton.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.enableEditMode(resultDiv, addon, messageId, formattedResult, message);
+                });
 
                 const timestamp = document.createElement('div');
                 timestamp.className = 'addon-result-timestamp';
@@ -523,6 +636,155 @@ export class ResultFormatter {
         } catch (error) {
             console.error(`[Sidecar AI] Error injecting into dropdown:`, error);
             return false;
+        }
+    }
+
+    /**
+     * Enable edit mode for a result
+     */
+    enableEditMode(resultElement, addon, messageId, currentContent, message) {
+        if (resultElement.classList.contains('editing')) {
+            return; // Already in edit mode
+        }
+
+        resultElement.classList.add('editing');
+        const contentText = resultElement.querySelector('.addon-result-content-text');
+        const originalContent = contentText.innerHTML;
+
+        // Create editable textarea
+        const textarea = document.createElement('textarea');
+        textarea.className = 'addon-result-edit-textarea';
+        textarea.style.cssText = 'width: 100%; min-height: 150px; padding: 8px; background: #2e2e2e !important; background-color: #2e2e2e !important; border: 2px solid var(--SmartThemeEmColor, #9fc) !important; border-radius: 3px !important; color: #eee !important; font-family: inherit; font-size: 0.9em; resize: vertical;';
+        textarea.value = this.htmlToText(originalContent); // Convert HTML to plain text for editing
+
+        // Replace content with textarea
+        contentText.style.display = 'none';
+        resultElement.insertBefore(textarea, contentText);
+
+        // Create button container
+        const buttonContainer = document.createElement('div');
+        buttonContainer.className = 'addon-result-edit-buttons';
+        buttonContainer.style.cssText = 'display: flex; gap: 8px; margin-top: 8px; justify-content: flex-end;';
+
+        // Save button
+        const saveButton = document.createElement('button');
+        saveButton.className = 'addon-result-save-button';
+        saveButton.style.cssText = 'padding: 6px 12px; background: rgba(76, 209, 55, 0.2) !important; background-color: rgba(76, 209, 55, 0.2) !important; border: 1px solid #4cd137 !important; border-radius: 3px !important; color: #4cd137 !important; cursor: pointer; font-size: 0.85em;';
+        saveButton.innerHTML = '<i class="fa-solid fa-check"></i> Save';
+        saveButton.addEventListener('click', async () => {
+            const editedContent = textarea.value.trim();
+            if (editedContent !== this.htmlToText(originalContent)) {
+                // Convert back to HTML (simple conversion)
+                const htmlContent = this.textToHtml(editedContent);
+
+                // Update display
+                contentText.innerHTML = htmlContent;
+                contentText.style.display = 'block';
+                textarea.remove();
+                buttonContainer.remove();
+                resultElement.classList.remove('editing');
+
+                // Update metadata
+                this.updateResultMetadata(message, addon, editedContent, true);
+
+                // Show edited badge
+                this.showEditedBadge(resultElement);
+            } else {
+                // No changes, just cancel
+                contentText.style.display = 'block';
+                textarea.remove();
+                buttonContainer.remove();
+                resultElement.classList.remove('editing');
+            }
+        });
+
+        // Cancel button
+        const cancelButton = document.createElement('button');
+        cancelButton.className = 'addon-result-cancel-button';
+        cancelButton.style.cssText = 'padding: 6px 12px; background: rgba(128, 128, 128, 0.2) !important; background-color: rgba(128, 128, 128, 0.2) !important; border: 1px solid rgba(128, 128, 128, 0.4) !important; border-radius: 3px !important; color: rgba(255, 255, 255, 0.7) !important; cursor: pointer; font-size: 0.85em;';
+        cancelButton.innerHTML = '<i class="fa-solid fa-times"></i> Cancel';
+        cancelButton.addEventListener('click', () => {
+            contentText.style.display = 'block';
+            textarea.remove();
+            buttonContainer.remove();
+            resultElement.classList.remove('editing');
+        });
+
+        buttonContainer.appendChild(saveButton);
+        buttonContainer.appendChild(cancelButton);
+        resultElement.appendChild(buttonContainer);
+
+        // Focus textarea
+        textarea.focus();
+    }
+
+    /**
+     * Convert HTML to plain text for editing
+     */
+    htmlToText(html) {
+        const div = document.createElement('div');
+        div.innerHTML = html;
+        return div.textContent || div.innerText || '';
+    }
+
+    /**
+     * Convert plain text to HTML (simple conversion)
+     */
+    textToHtml(text) {
+        // Simple conversion: preserve line breaks and basic formatting
+        return text
+            .replace(/\n/g, '<br>')
+            .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*(.+?)\*/g, '<em>$1</em>');
+    }
+
+    /**
+     * Show edited badge on result
+     */
+    showEditedBadge(resultElement) {
+        // Check if badge already exists
+        if (resultElement.querySelector('.addon-result-edited-badge')) {
+            return;
+        }
+
+        const badge = document.createElement('span');
+        badge.className = 'addon-result-edited-badge';
+        badge.style.cssText = 'position: absolute; top: 5px; left: 5px; padding: 2px 6px; background: rgba(255, 193, 7, 0.2) !important; background-color: rgba(255, 193, 7, 0.2) !important; border: 1px solid rgba(255, 193, 7, 0.5) !important; border-radius: 3px !important; color: #ffc107 !important; font-size: 0.75em; font-weight: 600;';
+        badge.textContent = 'EDITED';
+        badge.title = `Edited at ${new Date().toLocaleTimeString()}`;
+        resultElement.appendChild(badge);
+    }
+
+    /**
+     * Update result metadata after editing
+     */
+    updateResultMetadata(message, addon, editedContent, isEdited) {
+        if (!message || !addon) {
+            return;
+        }
+
+        try {
+            // Update the storage tag with edited content
+            const encoded = btoa(unescape(encodeURIComponent(editedContent)));
+            const storageTag = `<!-- sidecar-storage:${addon.id}:${encoded}:edited:${Date.now()} -->`;
+
+            // Update message.mes
+            if (message.mes) {
+                // Remove old storage tag
+                const pattern = new RegExp(`<!-- sidecar-storage:${addon.id}:[^>]+ -->`, 'g');
+                message.mes = message.mes.replace(pattern, storageTag);
+
+                // If no storage tag was found, add it
+                if (!message.mes.includes(`sidecar-storage:${addon.id}:`)) {
+                    message.mes += '\n' + storageTag;
+                }
+            } else {
+                message.mes = storageTag;
+            }
+
+            console.log(`[Sidecar AI] Updated metadata for edited result: ${addon.name}`);
+        } catch (error) {
+            console.error(`[Sidecar AI] Error updating result metadata:`, error);
         }
     }
 
@@ -801,6 +1063,88 @@ export class ResultFormatter {
         } catch (error) {
             console.error('[Sidecar AI] Error restoring blocks from metadata:', error);
             return 0;
+        }
+    }
+
+    /**
+     * Get all results for a specific add-on from chat log
+     * Returns array of result objects with metadata
+     */
+    getAllResultsForAddon(addonId) {
+        const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+        if (!Array.isArray(chatLog) || chatLog.length === 0) {
+            return [];
+        }
+
+        const results = [];
+        const pattern = new RegExp(`<!-- sidecar-storage:${addonId}:(.+?)(?::edited:(\\d+))? -->`);
+
+        chatLog.forEach((message, index) => {
+            if (!message || !message.mes || message.is_user) {
+                return;
+            }
+
+            const match = message.mes.match(pattern);
+            if (match && match[1]) {
+                try {
+                    const decoded = decodeURIComponent(escape(atob(match[1])));
+                    const messageId = this.getMessageId(message);
+                    const isEdited = match[2] !== undefined;
+                    const editedAt = isEdited ? parseInt(match[2]) : null;
+
+                    if (decoded && decoded.length > 0) {
+                        results.push({
+                            messageId: messageId,
+                            messageIndex: index,
+                            addonId: addonId,
+                            content: decoded,
+                            timestamp: message.send_date || message.timestamp || Date.now(),
+                            edited: isEdited,
+                            editedAt: editedAt,
+                            messagePreview: (message.mes || '').substring(0, 100).replace(/<!--.*?-->/g, '').trim()
+                        });
+                    }
+                } catch (error) {
+                    console.warn(`[Sidecar AI] Failed to decode result for message ${index}:`, error);
+                }
+            }
+        });
+
+        // Sort by timestamp (newest first)
+        results.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+        return results;
+    }
+
+    /**
+     * Get all results for all add-ons (for history viewer)
+     */
+    getAllResults() {
+        // This would need access to addonManager, so we'll implement it differently
+        // For now, return empty - will be called from settings UI with addonManager
+        return [];
+    }
+
+    /**
+     * Delete a specific result from metadata
+     */
+    deleteResultFromMetadata(message, addonId) {
+        if (!message || !message.mes) {
+            return false;
+        }
+
+        try {
+            const pattern = new RegExp(`<!-- sidecar-storage:${addonId}:[^>]+ -->`, 'g');
+            const beforeLength = message.mes.length;
+            message.mes = message.mes.replace(pattern, '');
+
+            if (message.mes.length < beforeLength) {
+                console.log(`[Sidecar AI] Deleted result metadata for addon ${addonId}`);
+                return true;
+            }
+            return false;
+        } catch (error) {
+            console.error(`[Sidecar AI] Error deleting result metadata:`, error);
+            return false;
         }
     }
 

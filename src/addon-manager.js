@@ -29,8 +29,18 @@ export class AddonManager {
                 {};
             this.addons = settings.addons || [];
 
-            // Ensure all add-ons have required fields
-            this.addons = this.addons.map(addon => this.normalizeAddon(addon));
+            // Ensure all add-ons have required fields and order
+            this.addons = this.addons.map((addon, index) => {
+                const normalized = this.normalizeAddon(addon);
+                // If order wasn't set, assign based on index
+                if (normalized.order === undefined || normalized.order === null) {
+                    normalized.order = index + 1;
+                }
+                return normalized;
+            });
+
+            // Sort by order
+            this.addons.sort((a, b) => (a.order || 0) - (b.order || 0));
 
             console.log(`[Sidecar AI] Loaded ${this.addons.length} sidecar(s)`);
             return this.addons;
@@ -160,6 +170,16 @@ export class AddonManager {
      * Normalize add-on data structure
      */
     normalizeAddon(addon) {
+        // Ensure order is set - use existing order or assign based on position
+        let order = addon.order;
+        if (order === undefined || order === null) {
+            // If no order, assign based on current position or use a high number
+            const maxOrder = this.addons.length > 0
+                ? Math.max(...this.addons.map(a => a.order || 0))
+                : 0;
+            order = maxOrder + 1;
+        }
+
         return {
             id: addon.id || this.generateId(),
             name: addon.name || 'Unnamed Sidecar',
@@ -182,7 +202,8 @@ export class AddonManager {
                 includeHistory: addon.contextSettings?.includeHistory ?? this.defaultSettings.includeHistory,
                 historyDepth: addon.contextSettings?.historyDepth ?? this.defaultSettings.historyDepth
             },
-            enabled: addon.enabled !== undefined ? addon.enabled : true
+            enabled: addon.enabled !== undefined ? addon.enabled : true,
+            order: order
         };
     }
 
@@ -218,5 +239,242 @@ export class AddonManager {
             batch: Object.values(batchGroups),
             standalone
         };
+    }
+
+    /**
+     * Bulk enable add-ons
+     */
+    bulkEnable(addonIds) {
+        let count = 0;
+        addonIds.forEach(id => {
+            const addon = this.getAddon(id);
+            if (addon && !addon.enabled) {
+                addon.enabled = true;
+                count++;
+            }
+        });
+        if (count > 0) {
+            this.saveAddons();
+        }
+        return count;
+    }
+
+    /**
+     * Bulk disable add-ons
+     */
+    bulkDisable(addonIds) {
+        let count = 0;
+        addonIds.forEach(id => {
+            const addon = this.getAddon(id);
+            if (addon && addon.enabled) {
+                addon.enabled = false;
+                count++;
+            }
+        });
+        if (count > 0) {
+            this.saveAddons();
+        }
+        return count;
+    }
+
+    /**
+     * Bulk delete add-ons
+     */
+    bulkDelete(addonIds) {
+        let count = 0;
+        addonIds.forEach(id => {
+            if (this.deleteAddon(id)) {
+                count++;
+            }
+        });
+        // Save is already called in deleteAddon, but ensure it's saved
+        this.saveAddons();
+        return count;
+    }
+
+    /**
+     * Duplicate add-on
+     */
+    duplicateAddon(id) {
+        const addon = this.getAddon(id);
+        if (!addon) {
+            return null;
+        }
+
+        const duplicated = {
+            ...addon,
+            id: this.generateId(),
+            name: `${addon.name} - Copy`,
+            order: Math.max(...this.addons.map(a => a.order || 0)) + 1
+        };
+
+        const normalized = this.normalizeAddon(duplicated);
+        this.addons.push(normalized);
+        this.saveAddons();
+        return normalized;
+    }
+
+    /**
+     * Bulk duplicate add-ons
+     */
+    bulkDuplicate(addonIds) {
+        const duplicated = [];
+        addonIds.forEach(id => {
+            const dup = this.duplicateAddon(id);
+            if (dup) {
+                duplicated.push(dup);
+            }
+        });
+        return duplicated;
+    }
+
+    /**
+     * Reorder add-ons
+     */
+    reorderAddons(newOrder) {
+        // newOrder is an array of addon IDs in the desired order
+        newOrder.forEach((id, index) => {
+            const addon = this.getAddon(id);
+            if (addon) {
+                addon.order = index + 1;
+            }
+        });
+        // Re-sort and save
+        this.addons.sort((a, b) => (a.order || 0) - (b.order || 0));
+        this.saveAddons();
+        return true;
+    }
+
+    /**
+     * Move add-on up in order
+     */
+    moveAddonUp(id) {
+        const index = this.addons.findIndex(a => a.id === id);
+        if (index <= 0) return false;
+
+        const temp = this.addons[index].order;
+        this.addons[index].order = this.addons[index - 1].order;
+        this.addons[index - 1].order = temp;
+
+        this.addons.sort((a, b) => (a.order || 0) - (b.order || 0));
+        this.saveAddons();
+        return true;
+    }
+
+    /**
+     * Move add-on down in order
+     */
+    moveAddonDown(id) {
+        const index = this.addons.findIndex(a => a.id === id);
+        if (index < 0 || index >= this.addons.length - 1) return false;
+
+        const temp = this.addons[index].order;
+        this.addons[index].order = this.addons[index + 1].order;
+        this.addons[index + 1].order = temp;
+
+        this.addons.sort((a, b) => (a.order || 0) - (b.order || 0));
+        this.saveAddons();
+        return true;
+    }
+
+    /**
+     * Export add-ons to JSON
+     * @param {Array<string>} addonIds - Optional array of addon IDs to export. If not provided, exports all.
+     * @param {boolean} includeApiKeys - Whether to include API keys in export
+     * @returns {Object} Export data with metadata
+     */
+    exportAddons(addonIds = null, includeApiKeys = false) {
+        let addonsToExport = addonIds
+            ? this.addons.filter(a => addonIds.includes(a.id))
+            : this.addons;
+
+        // Create export data
+        const exportData = {
+            version: '1.0',
+            exportDate: new Date().toISOString(),
+            addons: addonsToExport.map(addon => {
+                const exported = { ...addon };
+
+                // Remove or mask API keys if not including them
+                if (!includeApiKeys) {
+                    if (exported.apiKey && exported.apiKey.trim() !== '') {
+                        exported.apiKey = '[REDACTED]';
+                    }
+                }
+
+                return exported;
+            })
+        };
+
+        return exportData;
+    }
+
+    /**
+     * Import add-ons from JSON data
+     * @param {Object} importData - Import data object
+     * @param {string} mergeMode - 'merge' (add new, update existing) or 'replace' (replace all)
+     * @returns {Object} Import result with stats
+     */
+    importAddons(importData, mergeMode = 'merge') {
+        if (!importData || !importData.addons || !Array.isArray(importData.addons)) {
+            throw new Error('Invalid import data: addons array is required');
+        }
+
+        const result = {
+            imported: 0,
+            updated: 0,
+            skipped: 0,
+            errors: []
+        };
+
+        if (mergeMode === 'replace') {
+            // Replace all add-ons
+            this.addons = [];
+            importData.addons.forEach(addonData => {
+                try {
+                    const normalized = this.normalizeAddon(addonData);
+                    // Generate new ID to avoid conflicts
+                    normalized.id = this.generateId();
+                    this.addons.push(normalized);
+                    result.imported++;
+                } catch (error) {
+                    result.errors.push({ addon: addonData.name || 'Unknown', error: error.message });
+                    result.skipped++;
+                }
+            });
+        } else {
+            // Merge mode: add new, update existing
+            importData.addons.forEach(addonData => {
+                try {
+                    const existingIndex = this.addons.findIndex(a => a.id === addonData.id);
+
+                    if (existingIndex >= 0) {
+                        // Update existing - but generate new ID to avoid conflicts
+                        const normalized = this.normalizeAddon({
+                            ...addonData,
+                            id: this.generateId() // New ID to avoid conflicts
+                        });
+                        this.addons.push(normalized);
+                        result.imported++;
+                    } else {
+                        // Add new
+                        const normalized = this.normalizeAddon(addonData);
+                        // Generate new ID to avoid conflicts
+                        normalized.id = this.generateId();
+                        this.addons.push(normalized);
+                        result.imported++;
+                    }
+                } catch (error) {
+                    result.errors.push({ addon: addonData.name || 'Unknown', error: error.message });
+                    result.skipped++;
+                }
+            });
+        }
+
+        // Re-sort by order
+        this.addons.sort((a, b) => (a.order || 0) - (b.order || 0));
+        this.saveAddons();
+
+        return result;
     }
 }
