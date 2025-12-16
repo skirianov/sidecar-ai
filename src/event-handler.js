@@ -165,18 +165,23 @@ export class EventHandler {
                 return;
             }
 
-            // Avoid processing the same message twice
+            // Avoid processing the same message twice (unless swipe variant changed)
             const aiMessageId = this.resultFormatter.getMessageId(aiMessage);
-            if (aiMessageId && aiMessageId === this.lastProcessedMessageId) {
-                console.log('[Sidecar AI] Latest AI message already processed, skipping duplicate trigger');
+            const aiSwipeId = aiMessage.swipe_id ?? 0;
+
+            if (aiMessageId &&
+                aiMessageId === this.lastProcessedMessageId &&
+                aiSwipeId === this.lastProcessedSwipeId) {
+                console.log(`[Sidecar AI] Message ${aiMessageId} (swipe ${aiSwipeId}) already processed, skipping`);
                 return;
             }
 
             // Process add-ons with the confirmed AI message
             await this.processAddons(autoAddons, aiMessage);
 
-            // Record the processed message id to avoid duplicates
+            // Record the processed message id and swipe id
             this.lastProcessedMessageId = aiMessageId || this.lastProcessedMessageId;
+            this.lastProcessedSwipeId = aiSwipeId;
         } catch (error) {
             console.error('[Sidecar AI] Error handling message:', error);
         } finally {

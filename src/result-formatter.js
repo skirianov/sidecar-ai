@@ -459,6 +459,10 @@ export class ResultFormatter {
 
             // Mark as recently restored to protect from cleanup
             this.markContainerAsRestored(sidecarContainer);
+        } else if (sidecarContainer.style.display === 'none') {
+            // If container exists but is hidden (e.g. from previous swipe), show it
+            sidecarContainer.style.display = '';
+            this.markContainerAsRestored(sidecarContainer);
         }
 
         // Check if loading indicator already exists for this addon - avoid duplicates
