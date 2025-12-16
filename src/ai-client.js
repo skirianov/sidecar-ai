@@ -1,6 +1,7 @@
 /**
  * AI Client
  * Handles communication with AI providers
+ * Uses SillyTavern's ChatCompletionService for all API requests
  */
 
 export class AIClient {
@@ -9,26 +10,69 @@ export class AIClient {
     }
 
     /**
-     * Send single add-on request to AI
+     * Map provider names to SillyTavern's chat_completion_source values
+     */
+    getChatCompletionSource(provider) {
+        const sourceMap = {
+            'openai': 'openai',
+            'openrouter': 'openrouter',
+            'anthropic': 'anthropic',
+            'google': 'google',
+            'deepseek': 'deepseek',
+            'cohere': 'cohere',
+            'custom': 'custom',
+            // Add more mappings as needed
+        };
+        return sourceMap[provider] || 'openai';
+    }
+
+    /**
+     * Send single add-on request to AI using SillyTavern's ChatCompletionService
      */
     async sendToAI(addon, prompt) {
         try {
             const provider = addon.aiProvider || 'openai';
             const model = addon.aiModel || 'gpt-3.5-turbo';
-            const apiKey = addon.apiKey || this.getProviderApiKey(provider);
             const apiUrl = addon.apiUrl; // Custom endpoint support
+            const chatCompletionSource = this.getChatCompletionSource(provider);
 
-            if (!apiKey && provider !== 'custom' && provider !== 'koboldcpp') { // Some local providers don't need keys
-                 // Warn but maybe proceed if user knows what they're doing (e.g. local)
+            // Use SillyTavern's ChatCompletionService - it handles everything!
+            if (this.context && this.context.ChatCompletionService) {
+                console.log(`[Sidecar AI] Using SillyTavern ChatCompletionService for ${provider} (${model})`);
+                
+                const messages = Array.isArray(prompt) 
+                    ? prompt 
+                    : [{ role: 'user', content: prompt }];
+
+                const response = await this.context.ChatCompletionService.processRequest({
+                    stream: false,
+                    messages: messages,
+                    model: model,
+                    chat_completion_source: chatCompletionSource,
+                    max_tokens: 4096,
+                    temperature: 0.7,
+                    custom_url: apiUrl || undefined, // Use custom URL if provided
+                    // SillyTavern will automatically handle:
+                    // - API keys from connection profiles
+                    // - Reverse proxy settings
+                    // - Provider-specific headers
+                    // - All the complex stuff!
+                }, {
+                    presetName: undefined, // Don't use presets for sidecar requests
+                }, true); // extractData = true
+
+                // Extract content from response
+                if (response && typeof response === 'object' && 'content' in response) {
+                    return response.content;
+                }
+                
+                // Fallback extraction
+                return response?.choices?.[0]?.message?.content || response?.content || String(response);
             }
 
-            // Use SillyTavern's API system if available
-            if (this.context.api) {
-                return await this.sendViaSillyTavernAPI(addon, prompt, provider, model, apiKey);
-            }
-
-            // Fallback to direct API calls
-            return await this.sendDirectAPI(addon, prompt, provider, model, apiKey, apiUrl);
+            // Fallback: if ChatCompletionService not available, use direct API
+            console.warn('[Sidecar AI] ChatCompletionService not available, using fallback');
+            return await this.sendDirectAPIFallback(addon, prompt, provider, model, apiUrl);
         } catch (error) {
             console.error(`[Sidecar AI] Error sending to AI (${addon.name}):`, error);
             throw error;
@@ -65,27 +109,36 @@ export class AIClient {
             // Combine prompts
             const combinedPrompt = prompts.join('\n\n---\n\n');
 
-            // Send batch request
-            if (this.context.api) {
-                const response = await this.sendViaSillyTavernAPI(
-                    addons[0],
-                    combinedPrompt,
-                    provider,
-                    model,
-                    apiKey
-                );
+            // Use SillyTavern's ChatCompletionService for batch
+            if (this.context && this.context.ChatCompletionService) {
+                const chatCompletionSource = this.getChatCompletionSource(provider);
+                const messages = Array.isArray(combinedPrompt)
+                    ? combinedPrompt
+                    : [{ role: 'user', content: combinedPrompt }];
 
-                // Split response (simple approach - may need refinement)
-                return this.splitBatchResponse(response, addons.length);
+                const response = await this.context.ChatCompletionService.processRequest({
+                    stream: false,
+                    messages: messages,
+                    model: model,
+                    chat_completion_source: chatCompletionSource,
+                    max_tokens: 4096,
+                    temperature: 0.7,
+                    custom_url: addons[0].apiUrl || undefined,
+                }, {
+                    presetName: undefined,
+                }, true);
+
+                const content = response?.content || response?.choices?.[0]?.message?.content || String(response);
+                return this.splitBatchResponse(content, addons.length);
             }
 
-            // Direct API fallback
-            const response = await this.sendDirectAPI(
+            // Fallback
+            const response = await this.sendDirectAPIFallback(
                 addons[0],
                 combinedPrompt,
                 provider,
                 model,
-                apiKey
+                addons[0].apiUrl
             );
 
             return this.splitBatchResponse(response, addons.length);
@@ -96,41 +149,15 @@ export class AIClient {
     }
 
     /**
-     * Send via SillyTavern's API system
+     * Fallback: Send direct API request (only used if ChatCompletionService unavailable)
      */
-    async sendViaSillyTavernAPI(addon, prompt, provider, model, apiKey) {
-        // Try to use SillyTavern's API wrapper
-        if (this.context.api && this.context.api.request) {
-            const request = {
-                provider: provider,
-                model: model,
-                messages: [
-                    {
-                        role: 'user',
-                        content: prompt
-                    }
-                ],
-                apiKey: apiKey
-            };
-
-            const response = await this.context.api.request(request);
-            return this.extractContent(response);
-        }
-
-        // Fallback to direct API
-        return await this.sendDirectAPI(addon, prompt, provider, model, apiKey);
-    }
-
-    /**
-     * Send direct API request
-     */
-    async sendDirectAPI(addon, prompt, provider, model, apiKey, apiUrl = null) {
+    async sendDirectAPIFallback(addon, prompt, provider, model, apiUrl = null) {
         let endpoint = apiUrl;
-        
+
         if (!endpoint) {
             endpoint = this.getProviderEndpoint(provider);
         } else {
-             console.log('[Sidecar AI] Using custom API URL:', endpoint);
+            console.log('[Sidecar AI] Using custom API URL:', endpoint);
         }
 
         const requestBody = this.buildRequestBody(provider, model, prompt);
