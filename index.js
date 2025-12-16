@@ -301,6 +301,34 @@ async function loadModules() {
                     });
                 }
             });
+
+            // Listen for message swipe events
+            // When user swipes between messages, hide all sidecars and show only the active message's sidecars
+            const swipeEvent = context.event_types.MESSAGE_SWIPED || 'MESSAGE_SWIPED';
+            if (swipeEvent) {
+                context.eventSource.on(swipeEvent, (messageIndex) => {
+                    console.log(`[Sidecar AI] Message swipe event detected: ${swipeEvent}`, messageIndex);
+                    if (typeof messageIndex === 'number') {
+                        // Pass addonManager so we can restore blocks for the swiped-to message
+                        resultFormatter.handleMessageSwiped(messageIndex, addonManager);
+                    } else {
+                        console.warn('[Sidecar AI] MESSAGE_SWIPED event did not provide message index');
+                    }
+                });
+                console.log(`[Sidecar AI] Registered listener for ${swipeEvent}`);
+            }
+
+            // Listen for generation start events
+            // When a new AI response is requested, hide all sidecars (they'll be shown when the response arrives)
+            const generationStartEvent = context.event_types.GENERATION_STARTED || 'GENERATION_STARTED';
+            if (generationStartEvent) {
+                context.eventSource.on(generationStartEvent, () => {
+                    console.log(`[Sidecar AI] Generation started event detected: ${generationStartEvent}`);
+                    // Hide all sidecars when generation starts - new ones will appear when response arrives
+                    resultFormatter.hideAllSidecarCards();
+                });
+                console.log(`[Sidecar AI] Registered listener for ${generationStartEvent}`);
+            }
         }
 
         // Set up periodic cleanup and swipe detection

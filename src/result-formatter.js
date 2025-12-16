@@ -1282,6 +1282,145 @@ export class ResultFormatter {
     }
 
     /**
+     * Hide all sidecar cards
+     * Used when swiping to a new message or when generation starts
+     */
+    hideAllSidecarCards() {
+        try {
+            const allContainers = document.querySelectorAll('.sidecar-container');
+            let hiddenCount = 0;
+            allContainers.forEach(container => {
+                // Use display: none instead of remove() so we can restore later
+                if (container.style.display !== 'none') {
+                    container.style.display = 'none';
+                    hiddenCount++;
+                }
+            });
+            if (hiddenCount > 0) {
+                console.log(`[Sidecar AI] Hid ${hiddenCount} sidecar container(s)`);
+            }
+            return hiddenCount;
+        } catch (error) {
+            console.error('[Sidecar AI] Error hiding all sidecar cards:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Show sidecar cards for a specific message
+     * Used when swiping to a message - shows only that message's sidecars
+     * @param {string|number} messageId - The message ID or index to show sidecars for
+     */
+    showSidecarCardsForMessage(messageId) {
+        try {
+            // If messageId is a number (index), get the actual message from chat log
+            let targetMessageId = messageId;
+            if (typeof messageId === 'number') {
+                const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+                if (messageId >= 0 && messageId < chatLog.length) {
+                    const message = chatLog[messageId];
+                    targetMessageId = this.getMessageId(message);
+                } else {
+                    console.warn(`[Sidecar AI] Invalid message index: ${messageId}`);
+                    return 0;
+                }
+            }
+
+            // Find the message element
+            const messageElement = this.findMessageElement(targetMessageId);
+            if (!messageElement) {
+                console.warn(`[Sidecar AI] Message element not found for ID: ${targetMessageId}`);
+                return 0;
+            }
+
+            // Find all sidecar containers for this message
+            const containers = messageElement.querySelectorAll('.sidecar-container');
+            let shownCount = 0;
+            containers.forEach(container => {
+                if (container.style.display === 'none') {
+                    container.style.display = '';
+                    shownCount++;
+                    // Mark as restored to protect from cleanup
+                    this.markContainerAsRestored(container);
+                }
+            });
+
+            if (shownCount > 0) {
+                console.log(`[Sidecar AI] Showed ${shownCount} sidecar container(s) for message ${targetMessageId}`);
+            }
+
+            return shownCount;
+        } catch (error) {
+            console.error('[Sidecar AI] Error showing sidecar cards for message:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Handle message swipe event
+     * Hides all sidecar cards, then shows only the cards for the swiped-to message
+     * Also restores blocks for that message if they haven't been restored yet
+     * @param {number} messageIndex - The index of the message that was swiped to
+     * @param {Object} addonManager - Optional addon manager to restore blocks if needed
+     */
+    async handleMessageSwiped(messageIndex, addonManager = null) {
+        try {
+            console.log(`[Sidecar AI] Message swiped to index: ${messageIndex}`);
+            
+            // First, hide all sidecar cards
+            this.hideAllSidecarCards();
+            
+            // Get the message from chat log
+            const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+            if (messageIndex < 0 || messageIndex >= chatLog.length) {
+                console.warn(`[Sidecar AI] Invalid message index for swipe: ${messageIndex}`);
+                return;
+            }
+
+            const message = chatLog[messageIndex];
+            const messageId = this.getMessageId(message);
+
+            // Wait a bit for DOM to update after swipe
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            // If addonManager is provided, restore blocks for this message if they exist in metadata
+            // but haven't been restored yet
+            if (addonManager && message.extra?.sidecarResults) {
+                const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(messageIndex);
+                if (messageElement) {
+                    const allAddons = addonManager.getAllAddons();
+                    for (const addon of allAddons) {
+                        if (!addon.enabled) continue;
+                        
+                        const stored = message.extra.sidecarResults[addon.id];
+                        if (!stored) continue;
+
+                        // Check if block already exists
+                        const existingBlock = messageElement.querySelector(`.addon_section-${addon.id}`);
+                        if (!existingBlock && addon.responseLocation === 'outsideChatlog') {
+                            // Restore the dropdown block
+                            const formatted = this.formatResult(addon, stored.result, message, true);
+                            const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
+                            if (success) {
+                                const container = messageElement.querySelector('.sidecar-container');
+                                if (container) {
+                                    this.markContainerAsRestored(container);
+                                }
+                                console.log(`[Sidecar AI] Restored sidecar for ${addon.name} on swipe to message ${messageIndex}`);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Show sidecar cards for the swiped-to message
+            this.showSidecarCardsForMessage(messageIndex);
+        } catch (error) {
+            console.error('[Sidecar AI] Error handling message swipe:', error);
+        }
+    }
+
+    /**
      * Restore all blocks from saved metadata when chat loads
      * Scans chat log and restores UI blocks for all saved results
      * Only restores blocks for currently visible messages
