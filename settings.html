@@ -92,6 +92,16 @@
                     </div>
                 </div>
 
+                <div class="add_ons_form_row" id="add_ons_service_provider_row" style="display: none;">
+                    <div class="add_ons_form_group" style="grid-column: 1 / -1;">
+                        <label for="add_ons_form_service_provider">Service Provider (OpenRouter only)</label>
+                        <select id="add_ons_form_service_provider" name="serviceProvider" class="text_pole" multiple>
+                            <!-- Options will be populated dynamically from SillyTavern's OpenRouter providers -->
+                        </select>
+                        <small class="add_ons_form_hint">Select one or more service providers (e.g., Chutes, Nvidia, Parasails). Leave empty to use all providers.</small>
+                    </div>
+                </div>
+
                 <div class="add_ons_form_row" id="add_ons_api_url_row">
                     <div class="add_ons_form_group">
                         <label for="add_ons_form_api_url">API URL (Optional)</label>

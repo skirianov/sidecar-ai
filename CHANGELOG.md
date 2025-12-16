@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.3] - 2025-12-16
+
+### Added
+- Service provider selection for OpenRouter (Chutes, Nvidia, Parasails, etc.)
+- Service provider field automatically shows/hides based on selected AI provider
+- Service providers loaded from SillyTavern's OpenRouter providers dropdown
+
+### Fixed
+- Fixed 403 Forbidden error when fetching API keys by properly accessing getRequestHeaders
+- Improved API key retrieval to use SillyTavern's /api/secrets/find endpoint correctly
+
+### Changed
+- OpenRouter requests now support specifying service providers via provider array
+- Better error handling for API key retrieval
+
 ## [0.1.2] - 2025-12-16
 
 ### Added

@@ -162,6 +162,7 @@ export class SettingsUI {
             const provider = $(this).val();
             self.loadModelsForProvider(provider);
             await self.checkAndPrefillAPIKey(provider);
+            self.toggleServiceProviderField(provider);
         });
 
         // Test Connection button
@@ -208,6 +209,7 @@ export class SettingsUI {
             setTimeout(async () => {
                 this.loadModelsForProvider('openai');
                 await this.checkAndPrefillAPIKey('openai');
+                this.toggleServiceProviderField('openai');
             }, 100);
         }
 
@@ -624,6 +626,15 @@ export class SettingsUI {
         }
 
         $('#add_ons_form_api_url').val(addon.apiUrl || '');
+        
+        // Handle service provider (OpenRouter only)
+        if (addon.serviceProvider && Array.isArray(addon.serviceProvider)) {
+            $('#add_ons_form_service_provider').val(addon.serviceProvider);
+        } else {
+            $('#add_ons_form_service_provider').val([]);
+        }
+        this.toggleServiceProviderField(addon.aiProvider);
+        
         $('#add_ons_form_result_format').val(addon.resultFormat);
         $('#add_ons_form_response_location').val(addon.responseLocation);
 
@@ -750,6 +761,52 @@ export class SettingsUI {
         $('.add_ons_field_error, .add_ons_field_success').removeClass('add_ons_field_error add_ons_field_success');
     }
 
+    /**
+     * Toggle service provider field visibility based on selected provider
+     */
+    toggleServiceProviderField(provider) {
+        const serviceProviderRow = $('#add_ons_service_provider_row');
+        if (provider === 'openrouter') {
+            serviceProviderRow.show();
+            this.loadServiceProviders();
+        } else {
+            serviceProviderRow.hide();
+        }
+    }
+
+    /**
+     * Load service providers from SillyTavern's OpenRouter providers dropdown
+     */
+    loadServiceProviders() {
+        const $serviceProviderSelect = $('#add_ons_form_service_provider');
+        
+        // Try to get options from SillyTavern's OpenRouter providers dropdown
+        const $stSelect = $('#openrouter_providers_chat');
+        if ($stSelect.length > 0 && $stSelect.find('option').length > 0) {
+            // Clear existing options
+            $serviceProviderSelect.empty();
+            
+            // Copy options from SillyTavern's dropdown
+            $stSelect.find('option').each(function() {
+                const $option = $(this);
+                const value = $option.val();
+                const text = $option.text();
+                
+                if (value) {
+                    $serviceProviderSelect.append(
+                        $('<option></option>')
+                            .attr('value', value)
+                            .text(text)
+                    );
+                }
+            });
+            
+            console.log(`[Sidecar AI] Loaded ${$serviceProviderSelect.find('option').length} service providers`);
+        } else {
+            console.log('[Sidecar AI] OpenRouter providers dropdown not found, service providers not loaded');
+        }
+    }
+
     async saveAddon() {
         const form = $('#add_ons_form')[0];
         if (!form.checkValidity()) {
@@ -823,6 +880,11 @@ export class SettingsUI {
             }
             // If using ST key, save empty string (we'll fetch from ST when needed)
 
+            // Get service provider (OpenRouter only)
+            const serviceProvider = provider === 'openrouter' 
+                ? ($('#add_ons_form_service_provider').val() || [])
+                : [];
+
             const formData = {
                 id: $('#add_ons_form_id').val(),
                 name: $('#add_ons_form_name').val(),
@@ -834,6 +896,7 @@ export class SettingsUI {
                 aiModel: model,
                 apiKey: savedApiKey, // Save empty if using ST key, otherwise save the entered key
                 apiUrl: apiUrl || '', // Optional
+                serviceProvider: serviceProvider, // Array of service providers for OpenRouter
                 resultFormat: $('#add_ons_form_result_format').val(),
                 responseLocation: $('#add_ons_form_response_location').val(),
                 contextSettings: {

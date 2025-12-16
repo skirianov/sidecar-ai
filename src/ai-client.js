@@ -44,7 +44,7 @@ export class AIClient {
                     ? prompt
                     : [{ role: 'user', content: prompt }];
 
-                const response = await this.context.ChatCompletionService.processRequest({
+                const requestOptions = {
                     stream: false,
                     messages: messages,
                     model: model,
@@ -52,12 +52,14 @@ export class AIClient {
                     max_tokens: 4096,
                     temperature: 0.7,
                     custom_url: apiUrl || undefined, // Use custom URL if provided
-                    // SillyTavern will automatically handle:
-                    // - API keys from connection profiles
-                    // - Reverse proxy settings
-                    // - Provider-specific headers
-                    // - All the complex stuff!
-                }, {
+                };
+
+                // Add OpenRouter service providers if specified
+                if (provider === 'openrouter' && addon.serviceProvider && Array.isArray(addon.serviceProvider) && addon.serviceProvider.length > 0) {
+                    requestOptions.provider = addon.serviceProvider;
+                }
+
+                const response = await this.context.ChatCompletionService.processRequest(requestOptions, {
                     presetName: undefined, // Don't use presets for sidecar requests
                 }, true); // extractData = true
 
@@ -597,14 +599,32 @@ export class AIClient {
     }
 
     /**
+     * Get request headers for API calls
+     */
+    getRequestHeaders() {
+        // Try multiple ways to get request headers
+        if (typeof getRequestHeaders === 'function') {
+            return getRequestHeaders();
+        }
+        if (typeof window !== 'undefined' && window.getRequestHeaders && typeof window.getRequestHeaders === 'function') {
+            return window.getRequestHeaders();
+        }
+        if (this.context && this.context.getRequestHeaders && typeof this.context.getRequestHeaders === 'function') {
+            return this.context.getRequestHeaders();
+        }
+        // Fallback to basic headers
+        return {
+            'Content-Type': 'application/json'
+        };
+    }
+
+    /**
      * Call SillyTavern's /api/secrets/find endpoint to get actual API key value
      * This is equivalent to findSecret() function
      */
     async findSecret(key, id = null) {
         try {
-            const headers = this.context.getRequestHeaders ? this.context.getRequestHeaders() : {
-                'Content-Type': 'application/json'
-            };
+            const headers = this.getRequestHeaders();
 
             const response = await fetch('/api/secrets/find', {
                 method: 'POST',
@@ -613,6 +633,7 @@ export class AIClient {
             });
 
             if (!response.ok) {
+                console.warn(`[Sidecar AI] API returned ${response.status} for secret ${key}`);
                 return null;
             }
 

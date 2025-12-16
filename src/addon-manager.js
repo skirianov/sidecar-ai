@@ -169,6 +169,7 @@ export class AddonManager {
             aiModel: addon.aiModel || 'gpt-3.5-turbo',
             apiKey: addon.apiKey || '', // API key is required - validated in form
             apiUrl: addon.apiUrl || '', // Optional custom URL
+            serviceProvider: addon.serviceProvider || [], // Array of service providers for OpenRouter
             resultFormat: addon.resultFormat || 'collapsible',
             responseLocation: addon.responseLocation || 'outsideChatlog',
             contextSettings: {
