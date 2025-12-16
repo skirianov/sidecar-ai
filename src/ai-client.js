@@ -663,17 +663,36 @@ export class AIClient {
      * This is equivalent to findSecret() function
      */
     async findSecret(key, id = null) {
+        // Method 1: Try to use window.findSecret if available (most reliable)
+        if (typeof window !== 'undefined' && window.findSecret && typeof window.findSecret === 'function') {
+            try {
+                console.log(`[Sidecar AI] Using window.findSecret for ${key}${id ? ` (id: ${id})` : ''}`);
+                const result = await window.findSecret(key, id);
+                if (result) {
+                    console.log('[Sidecar AI] Successfully got secret via window.findSecret');
+                    return result;
+                }
+            } catch (e) {
+                console.warn('[Sidecar AI] window.findSecret failed, trying direct API call:', e);
+            }
+        }
+
+        // Method 2: Direct API call with proper headers
         try {
             const headers = this.getRequestHeaders();
+
+            console.log(`[Sidecar AI] Fetching secret via API: ${key}${id ? ` (id: ${id})` : ''}`);
 
             const response = await fetch('/api/secrets/find', {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({ key, id }),
+                credentials: 'same-origin' // Include cookies for authentication
             });
 
             if (!response.ok) {
-                console.warn(`[Sidecar AI] API returned ${response.status} for secret ${key}`);
+                const errorText = await response.text().catch(() => '');
+                console.warn(`[Sidecar AI] API returned ${response.status} for secret ${key}:`, errorText.substring(0, 100));
                 return null;
             }
 
