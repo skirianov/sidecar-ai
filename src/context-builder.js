@@ -252,9 +252,12 @@ export class ContextBuilder {
         for (let i = chatLog.length - 1; i >= 0 && history.length < count; i--) {
             const msg = chatLog[i];
 
-            // First, try modern storage (message.extra)
-            if (msg?.extra?.sidecarResults?.[addonId]) {
-                const stored = msg.extra.sidecarResults[addonId];
+            // Try current swipe variant first, then fall back to message.extra
+            const swipeId = msg?.swipe_id ?? 0;
+            const sidecarResults = msg?.swipe_info?.[swipeId]?.extra?.sidecarResults || msg?.extra?.sidecarResults;
+            
+            if (sidecarResults?.[addonId]) {
+                const stored = sidecarResults[addonId];
                 if (stored.result && stored.result.length > 0 && stored.result.length < 100000) {
                     history.unshift(stored.result);
                     continue;
