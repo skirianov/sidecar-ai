@@ -393,6 +393,17 @@
     overflow-y: auto;
 }
 
+/* Regex tester */
+#add_ons_regex_test_result {
+    font-size: 0.9em;
+    line-height: 1.5;
+}
+
+#add_ons_regex_test_result div {
+    padding: 4px 8px;
+    border-radius: 3px;
+}
+
 /* Field states */
 .add_ons_field_error {
     border-color: #e84118 !important;

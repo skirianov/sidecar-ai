@@ -106,6 +106,18 @@
                         </div>
                     </div>
 
+                    <div class="add_ons_form_row" id="add_ons_regex_tester_row" style="display: none;">
+                        <div class="add_ons_form_group" style="grid-column: 1 / -1;">
+                            <label for="add_ons_regex_test_input">Test Regex Pattern</label>
+                            <div style="display: flex; gap: 8px; align-items: flex-start;">
+                                <input type="text" id="add_ons_regex_test_input" class="text_pole" placeholder="Enter test message (e.g., 'check my inventory')" style="flex: 1;">
+                                <button type="button" id="add_ons_regex_test_btn" class="menu_button" style="white-space: nowrap;">Test</button>
+                            </div>
+                            <div id="add_ons_regex_test_result" style="margin-top: 8px; padding: 8px; border-radius: 4px; display: none;"></div>
+                            <small class="add_ons_form_hint">Test your regex patterns against sample messages before saving.</small>
+                        </div>
+                    </div>
+
                     <div class="add_ons_form_row">
                         <div class="add_ons_form_group">
                             <label for="add_ons_form_ai_provider">AI Provider *</label>
