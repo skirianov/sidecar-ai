@@ -559,6 +559,34 @@
     margin-bottom: 0 !important;
 }
 
+/* WCAG Contrast Enforcement - Force high contrast for accessibility */
+.addon_result_content {
+    /* Ensure minimum contrast by forcing text colors based on background */
+    color: var(--SmartThemeBodyColor, inherit) !important;
+}
+
+/* Override low-contrast colors in AI-generated content */
+.addon_result_content [style*="color"] {
+    /* If color is too light (light gray), force dark */
+    /* This is a fallback - the sanitizer should catch most cases */
+}
+
+/* Force dark text on light backgrounds */
+.addon_result_content [style*="background"][style*="#f"],
+.addon_result_content [style*="background"][style*="#e"],
+.addon_result_content [style*="background"][style*="rgba"][style*="255"],
+.addon_result_content [style*="background"][style*="rgb"][style*="255"] {
+    color: #000000 !important;
+}
+
+/* Force light text on dark backgrounds */
+.addon_result_content [style*="background"][style*="#0"],
+.addon_result_content [style*="background"][style*="#1"],
+.addon_result_content [style*="background"][style*="#2"],
+.addon_result_content [style*="background"][style*="rgba"][style*="0,"] {
+    color: #ffffff !important;
+}
+
 /* Dropdown Legacy - ISOLATED */
 #add-ons-dropdown-container {
     margin: 10px;

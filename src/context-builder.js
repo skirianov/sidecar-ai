@@ -72,14 +72,18 @@ export class ContextBuilder {
             parts.push('- NEVER use fixed colors or styles that override the theme.');
             parts.push('- Example structure: <div class="sidecar-comment-section"><div class="sidecar-comment">...</div></div>');
             parts.push('');
-            parts.push('COLOR & ACCESSIBILITY REQUIREMENTS:');
-            parts.push('- CRITICAL: All colors MUST meet WCAG AA contrast ratio standards (minimum 4.5:1 for normal text, 3:1 for large text).');
-            parts.push('- Light text on dark backgrounds: Use #ffffff, #f0f0f0, #e8e8e8 or similar (contrast ratio > 12:1).');
-            parts.push('- Dark text on light backgrounds: Use #000000, #1a1a1a, #2d2d2d or similar (contrast ratio > 12:1).');
-            parts.push('- For colored backgrounds, ensure text color has sufficient contrast (test at https://webaim.org/resources/contrastchecker/).');
-            parts.push('- Avoid using light gray (#aaa, #bbb) on white backgrounds or dark gray (#444, #555) on black backgrounds.');
-            parts.push('- Choose visually pleasing, harmonious color palettes (complementary or analogous colors).');
-            parts.push('- Use opacity/alpha channels carefully - ensure final rendered color still has good contrast.');
+            parts.push('⚠️ CRITICAL COLOR & ACCESSIBILITY REQUIREMENTS (WCAG AA MANDATORY):');
+            parts.push('- MANDATORY: All text colors MUST have minimum 4.5:1 contrast ratio with their background (WCAG AA standard).');
+            parts.push('- NEVER use light gray (#aaa, #bbb, #ccc, #ddd, #eee) on light backgrounds - this FAILS WCAG.');
+            parts.push('- NEVER use dark gray (#444, #555, #666, #777) on dark backgrounds - this FAILS WCAG.');
+            parts.push('- FOR LIGHT BACKGROUNDS: Use DARK text colors: #000000, #1a1a1a, #2d2d2d, #333333 (contrast > 12:1).');
+            parts.push('- FOR DARK BACKGROUNDS: Use LIGHT text colors: #ffffff, #f0f0f0, #e8e8e8, #dddddd (contrast > 12:1).');
+            parts.push('- FOR COLORED BACKGROUNDS: If background is light (e.g., #f5f5f5, #e8e8e8), use DARK text (#000, #1a1a1a).');
+            parts.push('- FOR COLORED BACKGROUNDS: If background is dark (e.g., #2d2d2d, #1a1a1a), use LIGHT text (#fff, #f0f0f0).');
+            parts.push('- NEVER use rgba() with low opacity for text - always use solid colors with proper contrast.');
+            parts.push('- If you use colored backgrounds (purple, yellow, etc.), ensure text is either pure white (#ffffff) or pure black (#000000) for maximum contrast.');
+            parts.push('- TEST: Light gray text on pastel backgrounds = FAIL. Dark gray text on dark backgrounds = FAIL.');
+            parts.push('- REMEMBER: Better to use high-contrast colors than fail accessibility standards.');
             parts.push('');
         } else if (formatStyle === 'xml') {
             parts.push('FORMAT AS XML:');

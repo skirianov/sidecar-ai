@@ -2141,12 +2141,27 @@ export class SettingsUI {
      */
     importTemplate(template, filename) {
         try {
-            if (!template || !template.addons || template.addons.length === 0) {
-                alert('Invalid template format.');
+            console.log('[Sidecar AI] Importing template:', filename, template);
+
+            if (!template) {
+                alert('Invalid template: Template data is empty.');
+                return;
+            }
+
+            if (!template.addons || !Array.isArray(template.addons) || template.addons.length === 0) {
+                console.error('[Sidecar AI] Invalid template format:', template);
+                alert('Invalid template format: Missing "addons" array or it is empty.\n\nTemplate structure should be:\n{\n  "version": "1.0",\n  "name": "...",\n  "addons": [{...}]\n}');
                 return;
             }
 
             const addon = template.addons[0];
+            console.log('[Sidecar AI] Template addon:', addon);
+
+            // Validate required fields
+            if (!addon.name) {
+                alert('Invalid template: Addon is missing required "name" field.');
+                return;
+            }
 
             // Confirm import
             if (!confirm(`Import template: ${addon.name}?\n\nYou can edit it after import to customize settings and add your API key.`)) {
@@ -2155,20 +2170,29 @@ export class SettingsUI {
 
             // Import as new addon
             const result = this.addonManager.importAddons(template, 'merge');
+            console.log('[Sidecar AI] Import result:', result);
 
             if (result.imported > 0) {
-                console.log(`[Sidecar AI] Imported template: ${filename}`);
-                alert(`✓ Template imported successfully!\n\nDon't forget to edit it and add your API key.`);
+                console.log(`[Sidecar AI] Successfully imported template: ${filename}`);
+                alert(`✓ Template imported successfully!\n\nDon't forget to:\n1. Edit it to add your API key (or use SillyTavern's saved keys)\n2. Enable it using the toggle switch\n3. Test it by triggering manually or waiting for auto-trigger`);
 
                 // Close templates modal and refresh
                 $('#add_ons_templates_modal').hide();
                 this.refreshSettings();
             } else {
-                alert('Failed to import template. Check console for details.');
+                let errorMsg = 'Failed to import template.\n\n';
+                if (result.errors && result.errors.length > 0) {
+                    errorMsg += 'Errors:\n' + result.errors.map(e => `- ${e}`).join('\n');
+                } else {
+                    errorMsg += 'No addons were imported. Check console for details.';
+                }
+                console.error('[Sidecar AI] Import failed:', result);
+                alert(errorMsg);
             }
         } catch (error) {
             console.error('[Sidecar AI] Template import error:', error);
-            alert('Error importing template: ' + error.message);
+            console.error('[Sidecar AI] Error stack:', error.stack);
+            alert('Error importing template: ' + error.message + '\n\nCheck browser console (F12) for more details.');
         }
     }
 

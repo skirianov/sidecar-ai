@@ -135,7 +135,97 @@ export class ResultFormatter {
         // Remove javascript: protocol in links
         sanitized = sanitized.replace(/href\s*=\s*["']javascript:/gi, 'href="#');
 
+        // Fix WCAG contrast issues in HTML+CSS content
+        sanitized = this.fixWCAGContrast(sanitized);
+
         return sanitized;
+    }
+
+    /**
+     * Fix WCAG contrast issues by replacing low-contrast color combinations
+     * Detects common low-contrast patterns and replaces them with high-contrast alternatives
+     */
+    fixWCAGContrast(html) {
+        if (!html || typeof html !== 'string') {
+            return html;
+        }
+
+        let fixed = html;
+
+        // Fix 1: Replace light gray hex colors (#aaa, #bbb, #ccc, #ddd, #eee, etc.) with dark
+        fixed = fixed.replace(/color\s*:\s*#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})/gi, (match, color) => {
+            // Convert 3-digit to 6-digit
+            if (color.length === 3) {
+                color = color.split('').map(c => c + c).join('');
+            }
+            // Check if it's a light gray (high values: a-f, A-F)
+            const r = parseInt(color.substring(0, 2), 16);
+            const g = parseInt(color.substring(2, 4), 16);
+            const b = parseInt(color.substring(4, 6), 16);
+            const brightness = (r + g + b) / 3;
+
+            // If brightness > 170 (light gray), use black. If < 85 (dark gray), use white
+            if (brightness > 170) {
+                return 'color: #000000';
+            } else if (brightness < 85) {
+                return 'color: #ffffff';
+            }
+            return match;
+        });
+
+        // Fix 2: Replace rgba/rgb with low opacity or light colors
+        fixed = fixed.replace(/color\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/gi, (match, r, g, b, a) => {
+            const brightness = (parseInt(r) + parseInt(g) + parseInt(b)) / 3;
+            const opacity = a ? parseFloat(a) : 1.0;
+
+            // If opacity is low or color is light, use solid dark/light
+            if (opacity < 0.6 || brightness > 170) {
+                return 'color: #000000';
+            } else if (brightness < 85) {
+                return 'color: #ffffff';
+            }
+            return match;
+        });
+
+        // Fix 3: In style attributes, if background is light, ensure text is dark
+        fixed = fixed.replace(/style\s*=\s*["']([^"']*)["']/gi, (match, styles) => {
+            // Check if background is light (contains light colors)
+            const hasLightBg = /background[^:;]*:\s*(?:rgba?\([^)]*\)|#[eEfF][a-fA-F0-9]{2}[a-fA-F0-9]{3}|#[eEfF][a-fA-F0-9]{1}|#[fF]{3,6}|#[0-9a-fA-F]{6}(?:[eEfF]{2}|[dD][eEfF]))/i.test(styles);
+
+            if (hasLightBg) {
+                // If no color specified, add dark color
+                if (!/color\s*:/i.test(styles)) {
+                    return match.replace(styles, styles + '; color: #000000 !important');
+                } else {
+                    // Replace existing color with dark if it's light
+                    return match.replace(/color\s*:\s*[^;]+/gi, 'color: #000000 !important');
+                }
+            }
+
+            return match;
+        });
+
+        // Fix 4: Common low-contrast color names and values
+        const lowContrastColors = {
+            '#aaa': '#000000',
+            '#bbb': '#000000',
+            '#ccc': '#000000',
+            '#ddd': '#000000',
+            '#eee': '#000000',
+            '#f0f0f0': '#000000',
+            '#f5f5f5': '#000000',
+            '#e8e8e8': '#000000',
+            '#444': '#ffffff',
+            '#555': '#ffffff',
+            '#666': '#ffffff',
+            '#777': '#ffffff',
+        };
+
+        for (const [badColor, goodColor] of Object.entries(lowContrastColors)) {
+            fixed = fixed.replace(new RegExp(`color\\s*:\\s*${badColor.replace('#', '\\#')}`, 'gi'), `color: ${goodColor}`);
+        }
+
+        return fixed;
     }
 
     /**
