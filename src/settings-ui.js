@@ -78,6 +78,10 @@ export class SettingsUI {
 
             const isSelected = this.selectedAddons.has(addon.id);
 
+            let triggerBadgeClass = 'manual';
+            if (addon.triggerMode === 'auto') triggerBadgeClass = 'auto';
+            if (addon.triggerMode === 'trigger') triggerBadgeClass = 'trigger'; // You'll need CSS for this
+
             item.innerHTML = `
                 <div class="add_ons_item_header">
                     <div class="add_ons_item_select">
@@ -90,7 +94,7 @@ export class SettingsUI {
                         <h4>${addon.name || 'Unnamed Sidecar'}</h4>
                         <span class="add_ons_item_meta">
                             ${enabledBadge}
-                            <span class="add_ons_badge add_ons_badge_${(addon.triggerMode || 'auto') === 'auto' ? 'auto' : 'manual'}">${addon.triggerMode || 'auto'}</span>
+                            <span class="add_ons_badge add_ons_badge_${triggerBadgeClass}">${addon.triggerMode || 'auto'}</span>
                             <span class="add_ons_badge">${addon.requestMode || 'standalone'}</span>
                             <span class="add_ons_badge">${addon.responseLocation || 'outsideChatlog'}</span>
                             ${addon.formatStyle && addon.formatStyle !== 'html-css' ? `<span class="add_ons_badge" title="Format Style">${addon.formatStyle}</span>` : ''}
@@ -372,6 +376,18 @@ export class SettingsUI {
                 historyDepthGroup.slideDown(200);
             } else {
                 historyDepthGroup.slideUp(200);
+            }
+        });
+
+        // Trigger mode change - show/hide trigger config
+        $(document).off('change.sidecar', '#add_ons_form_trigger_mode').on('change.sidecar', '#add_ons_form_trigger_mode', function (e) {
+            e.stopPropagation();
+            const mode = $(this).val();
+            const triggerConfigRow = $('#add_ons_trigger_config_row');
+            if (mode === 'trigger') {
+                triggerConfigRow.slideDown(200);
+            } else {
+                triggerConfigRow.slideUp(200);
             }
         });
 
@@ -1228,6 +1244,19 @@ export class SettingsUI {
         $('#add_ons_form_description').val(addon.description);
         $('#add_ons_form_prompt').val(addon.prompt);
         $('#add_ons_form_trigger_mode').val(addon.triggerMode);
+
+        // Handle trigger config visibility
+        if (addon.triggerMode === 'trigger') {
+            $('#add_ons_trigger_config_row').show();
+        } else {
+            $('#add_ons_trigger_config_row').hide();
+        }
+
+        // Load trigger config
+        const triggerConfig = addon.triggerConfig || {};
+        $('#add_ons_form_trigger_type').val(triggerConfig.triggerType || 'keyword');
+        $('#add_ons_form_triggers').val((triggerConfig.triggers || []).join('\n'));
+
         $('#add_ons_form_request_mode').val(addon.requestMode);
         $('#add_ons_form_ai_provider').val(addon.aiProvider);
 
@@ -1569,6 +1598,12 @@ export class SettingsUI {
                 description: $('#add_ons_form_description').val(),
                 prompt: $('#add_ons_form_prompt').val(),
                 triggerMode: $('#add_ons_form_trigger_mode').val(),
+                triggerConfig: {
+                    triggerType: $('#add_ons_form_trigger_type').val(),
+                    triggers: $('#add_ons_form_triggers').val().split('\n')
+                        .map(t => t.trim())
+                        .filter(t => t.length > 0)
+                },
                 requestMode: $('#add_ons_form_request_mode').val(),
                 aiProvider: provider,
                 aiModel: model,

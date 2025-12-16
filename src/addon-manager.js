@@ -193,6 +193,10 @@ export class AddonManager {
             description: addon.description || '',
             prompt: addon.prompt || '',
             triggerMode: addon.triggerMode || 'auto',
+            triggerConfig: {
+                triggerType: addon.triggerConfig?.triggerType || 'keyword',
+                triggers: Array.isArray(addon.triggerConfig?.triggers) ? addon.triggerConfig.triggers : []
+            },
             requestMode: addon.requestMode || 'standalone',
             aiProvider: addon.aiProvider || 'openai',
             aiModel: addon.aiModel || 'gpt-3.5-turbo',

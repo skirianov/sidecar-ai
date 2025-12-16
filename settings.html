@@ -78,6 +78,7 @@
                             <select id="add_ons_form_trigger_mode" name="triggerMode" class="text_pole" required>
                                 <option value="auto">Auto (after each AI response)</option>
                                 <option value="manual">Manual (triggered by button)</option>
+                                <option value="trigger">Trigger (keyword/regex)</option>
                             </select>
                         </div>
 
@@ -87,6 +88,21 @@
                                 <option value="standalone">Standalone</option>
                                 <option value="batch">Batch (group with same provider/model)</option>
                             </select>
+                        </div>
+                    </div>
+
+                    <div class="add_ons_form_row" id="add_ons_trigger_config_row" style="display: none;">
+                        <div class="add_ons_form_group">
+                            <label for="add_ons_form_trigger_type">Trigger Type</label>
+                            <select id="add_ons_form_trigger_type" name="triggerType" class="text_pole">
+                                <option value="keyword">Keyword (case-insensitive)</option>
+                                <option value="regex">Regex Pattern</option>
+                            </select>
+                        </div>
+                        <div class="add_ons_form_group">
+                            <label for="add_ons_form_triggers">Triggers (One per line)</label>
+                            <textarea id="add_ons_form_triggers" name="triggers" class="text_pole" rows="3" placeholder="Enter triggers here..."></textarea>
+                            <small class="add_ons_form_hint">If user message contains any of these, sidecar will run on next AI response.</small>
                         </div>
                     </div>
 
