@@ -1485,6 +1485,39 @@ export class ResultFormatter {
     }
 
     /**
+     * Show sidecar cards for the currently active message (last message in chat)
+     * Used after initial restoration to ensure cards are visible
+     */
+    showSidecarCardsForActiveMessage() {
+        try {
+            const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+            if (!Array.isArray(chatLog) || chatLog.length === 0) {
+                return 0;
+            }
+
+            // Find the last AI message (most recent)
+            let lastMessageIndex = -1;
+            for (let i = chatLog.length - 1; i >= 0; i--) {
+                const message = chatLog[i];
+                if (message && message.mes && !message.is_user) {
+                    lastMessageIndex = i;
+                    break;
+                }
+            }
+
+            if (lastMessageIndex >= 0) {
+                console.log(`[Sidecar AI] Showing sidecar cards for active message (index ${lastMessageIndex})`);
+                return this.showSidecarCardsForMessage(lastMessageIndex);
+            }
+
+            return 0;
+        } catch (error) {
+            console.error('[Sidecar AI] Error showing sidecar cards for active message:', error);
+            return 0;
+        }
+    }
+
+    /**
      * Find message element by index in chat log
      * Matches AI messages in DOM to AI messages in chat log by position
      */

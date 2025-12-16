@@ -275,8 +275,13 @@ async function loadModules() {
         };
 
         // Restore immediately after initialization
-        setTimeout(() => {
-            restoreBlocks();
+        setTimeout(async () => {
+            await restoreBlocks();
+            // After restoration, show cards for the active message
+            // This ensures cards are visible even if GENERATION_STARTED fired and hid them
+            setTimeout(() => {
+                resultFormatter.showSidecarCardsForActiveMessage();
+            }, 200);
         }, 500);
 
         // Also listen for chat load events if available
@@ -290,13 +295,17 @@ async function loadModules() {
 
             chatLoadEvents.forEach(eventType => {
                 if (eventType) {
-                    context.eventSource.on(eventType, () => {
+                    context.eventSource.on(eventType, async () => {
                         console.log(`[Sidecar AI] Chat load event detected: ${eventType}`);
                         // Restore blocks for loaded chat
                         // Note: We don't call cleanupHiddenSidecarCards() here anymore
                         // because swipe navigation is handled by MESSAGE_SWIPED events
-                        setTimeout(() => {
-                            resultFormatter.restoreBlocksFromMetadata(addonManager);
+                        setTimeout(async () => {
+                            await resultFormatter.restoreBlocksFromMetadata(addonManager);
+                            // After restoration, show cards for the active message
+                            setTimeout(() => {
+                                resultFormatter.showSidecarCardsForActiveMessage();
+                            }, 200);
                         }, 500);
                     });
                 }
@@ -347,11 +356,15 @@ async function loadModules() {
                 // Only restore once when messages first appear
                 if (!hasRestored && chatContainer.querySelectorAll('.mes, .message').length > 0) {
                     hasRestored = true;
-                    setTimeout(() => {
+                    setTimeout(async () => {
                         // Restore blocks for initial chat load
                         // Note: We don't call cleanupHiddenSidecarCards() here anymore
                         // because swipe navigation is handled by MESSAGE_SWIPED events
-                        resultFormatter.restoreBlocksFromMetadata(addonManager);
+                        await resultFormatter.restoreBlocksFromMetadata(addonManager);
+                        // After restoration, show cards for the active message
+                        setTimeout(() => {
+                            resultFormatter.showSidecarCardsForActiveMessage();
+                        }, 200);
                     }, 1000);
                     // Stop observing after first restoration
                     observer.disconnect();
@@ -365,13 +378,17 @@ async function loadModules() {
 
             // Also check immediately in case messages are already loaded
             if (chatContainer.querySelectorAll('.mes, .message').length > 0) {
-                setTimeout(() => {
+                setTimeout(async () => {
                     if (!hasRestored) {
                         hasRestored = true;
                         // Restore blocks for already-loaded messages
                         // Note: We don't call cleanupHiddenSidecarCards() here anymore
                         // because swipe navigation is handled by MESSAGE_SWIPED events
-                        resultFormatter.restoreBlocksFromMetadata(addonManager);
+                        await resultFormatter.restoreBlocksFromMetadata(addonManager);
+                        // After restoration, show cards for the active message
+                        setTimeout(() => {
+                            resultFormatter.showSidecarCardsForActiveMessage();
+                        }, 200);
                     }
                 }, 1500);
             }
