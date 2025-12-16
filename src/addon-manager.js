@@ -194,6 +194,7 @@ export class AddonManager {
             serviceProvider: addon.serviceProvider || [], // Array of service providers for OpenRouter
             resultFormat: addon.resultFormat || 'collapsible',
             responseLocation: addon.responseLocation || 'outsideChatlog',
+            formatStyle: addon.formatStyle || 'markdown',
             contextSettings: {
                 messagesCount: addon.contextSettings?.messagesCount ?? this.defaultSettings.messagesCount,
                 includeCharCard: addon.contextSettings?.includeCharCard ?? this.defaultSettings.includeCharCard,

@@ -93,6 +93,7 @@ export class SettingsUI {
                             <span class="add_ons_badge">${addon.triggerMode || 'auto'}</span>
                             <span class="add_ons_badge">${addon.requestMode || 'standalone'}</span>
                             <span class="add_ons_badge">${addon.responseLocation || 'outsideChatlog'}</span>
+                            ${addon.formatStyle && addon.formatStyle !== 'markdown' ? `<span class="add_ons_badge" title="Format Style">${addon.formatStyle}</span>` : ''}
                         </span>
                     </div>
                     <div class="add_ons_item_actions">
@@ -981,6 +982,7 @@ export class SettingsUI {
 
         $('#add_ons_form_result_format').val(addon.resultFormat);
         $('#add_ons_form_response_location').val(addon.responseLocation);
+        $('#add_ons_form_format_style').val(addon.formatStyle || 'markdown');
 
         // Load models for provider, then set selected model
         this.loadModelsForProvider(addon.aiProvider);
@@ -1281,6 +1283,7 @@ export class SettingsUI {
                 serviceProvider: serviceProvider, // Array of service providers for OpenRouter
                 resultFormat: $('#add_ons_form_result_format').val(),
                 responseLocation: $('#add_ons_form_response_location').val(),
+                formatStyle: $('#add_ons_form_format_style').val() || 'markdown',
                 contextSettings: {
                     messagesCount: parseInt($('#add_ons_form_messages_count').val()) || 10,
                     includeCharCard: $('#add_ons_form_include_char_card').is(':checked'),

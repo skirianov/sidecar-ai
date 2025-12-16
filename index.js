@@ -193,6 +193,9 @@ async function loadModules() {
             triggerAddons: (addonIds = null) => {
                 return eventHandler.triggerAddons(addonIds);
             },
+            retryAddon: (addonId, messageId) => {
+                return eventHandler.retryAddon(addonId, messageId);
+            },
             getAddonManager: () => addonManager,
             getEventHandler: () => eventHandler,
             getSettingsUI: () => settingsUI

@@ -54,16 +54,51 @@ export class ContextBuilder {
         parts.push('IGNORE the chat history for story purposes - it is provided ONLY for context reference.');
         parts.push('ONLY execute what the instruction block explicitly asks you to do.');
         parts.push('If the instruction asks you to add something to the response, add ONLY that - do not write new story content.');
+        parts.push('Any styling you will apply will be in the context of the chat - NEVER apply any styling that will affect global styles.');
         parts.push('');
         parts.push('OUTPUT FORMATTING:');
-        parts.push('- ALWAYS use clean, standard Markdown formatting unless explicitly requested otherwise.');
-        parts.push('- Use ## or ### for headings (NOT # which renders too large).');
-        parts.push('- Use **bold** and *italic* for emphasis.');
-        parts.push('- Use - or * for unordered lists, with proper spacing (blank line before/after lists).');
-        parts.push('- Use blank lines between paragraphs for readability.');
-        parts.push('- Keep paragraphs short and well-spaced.');
-        parts.push('- NEVER mix Markdown and HTML - choose one format consistently.');
-        parts.push('');
+
+        // Add format-specific instructions based on addon.formatStyle
+        const formatStyle = addon.formatStyle || 'markdown';
+
+        if (formatStyle === 'html-css') {
+            parts.push('FORMAT AS HTML + CSS:');
+            parts.push('- Output valid HTML with inline CSS styles.');
+            parts.push('- Use safe, theme-compatible styles that inherit from the chat theme.');
+            parts.push('- Use CSS variables like var(--SmartThemeEmColor) and var(--SmartThemeBorderColor) for colors.');
+            parts.push('- For comment sections: Use divs with class="sidecar-comment", style with rgba() backgrounds and theme colors.');
+            parts.push('- For structured content: Use divs with class="sidecar-content-card" for cards.');
+            parts.push('- ALWAYS use "color: inherit !important" and "font-family: inherit !important" to respect theme.');
+            parts.push('- NEVER use fixed colors or styles that override the theme.');
+            parts.push('- Example structure: <div class="sidecar-comment-section"><div class="sidecar-comment">...</div></div>');
+            parts.push('');
+        } else if (formatStyle === 'xml') {
+            parts.push('FORMAT AS XML:');
+            parts.push('- Output well-formed XML with proper structure.');
+            parts.push('- Use meaningful tag names that describe the content.');
+            parts.push('- Include attributes where appropriate.');
+            parts.push('- Indent nested elements properly.');
+            parts.push('- Example: <response><item id="1">Content</item></response>');
+            parts.push('');
+        } else if (formatStyle === 'beautify') {
+            parts.push('FORMAT WITH DECORATIVE STYLING:');
+            parts.push('- Use creative formatting with visual elements.');
+            parts.push('- Apply decorative styles like cards, quotes, lists with custom bullets.');
+            parts.push('- Use emojis and symbols sparingly for visual interest.');
+            parts.push('- Structure content with clear visual hierarchy.');
+            parts.push('- Make it visually appealing while maintaining readability.');
+            parts.push('');
+        } else {
+            // Default Markdown
+            parts.push('- ALWAYS use clean, standard Markdown formatting unless explicitly requested otherwise.');
+            parts.push('- Use ## or ### for headings (NOT # which renders too large).');
+            parts.push('- Use **bold** and *italic* for emphasis.');
+            parts.push('- Use - or * for unordered lists, with proper spacing (blank line before/after lists).');
+            parts.push('- Use blank lines between paragraphs for readability.');
+            parts.push('- Keep paragraphs short and well-spaced.');
+            parts.push('- NEVER mix Markdown and HTML - choose one format consistently.');
+            parts.push('');
+        }
         parts.push('=== END OOC INSTRUCTION ===');
         parts.push('');
 

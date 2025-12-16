@@ -246,6 +246,51 @@ export class EventHandler {
     }
 
     /**
+     * Retry a failed add-on execution
+     */
+    async retryAddon(addonId, messageId) {
+        if (this.isProcessing) {
+            console.warn('[Add-Ons Extension] Already processing, skipping retry');
+            return;
+        }
+
+        try {
+            this.isProcessing = true;
+            console.log(`[Sidecar AI] Retrying add-on ${addonId} for message ${messageId}`);
+
+            const addon = this.addonManager.getAddon(addonId);
+            if (!addon) {
+                console.error(`[Sidecar AI] Add-on ${addonId} not found`);
+                return;
+            }
+
+            // Find message object
+            let message = this.resultFormatter.findMessageObject(messageId);
+
+            // If not found by ID (e.g. if messageId is a DOM ID), try to find the message element and map back
+            if (!message) {
+                // Fallback: use the latest AI message if we can't find specific one
+                // This is risky but better than failing if ID mapping fails
+                message = this.getLatestMessage();
+                console.warn(`[Sidecar AI] Could not find message object for ${messageId}, using latest message`);
+            }
+
+            if (!message) {
+                console.error(`[Sidecar AI] No message found for retry`);
+                return;
+            }
+
+            // Re-process
+            await this.processStandaloneAddon(addon, message);
+
+        } catch (error) {
+            console.error('[Sidecar AI] Error retrying add-on:', error);
+        } finally {
+            this.isProcessing = false;
+        }
+    }
+
+    /**
      * Process add-ons
      */
     async processAddons(addons, message) {
