@@ -389,7 +389,7 @@ export class AIClient {
                         console.warn('[Sidecar AI] Error type:', typeof chatServiceError);
                         console.warn('[Sidecar AI] Error keys:', chatServiceError ? Object.keys(chatServiceError) : 'null');
                         console.warn('[Sidecar AI] Full error object:', chatServiceError);
-                        
+
                         // Try to get more details from the error
                         // The error might have a response property or other details
                         if (chatServiceError && typeof chatServiceError === 'object') {
@@ -407,7 +407,7 @@ export class AIClient {
                                 console.warn(`[Sidecar AI] Error.${key}:`, chatServiceError[key]);
                             }
                         }
-                        
+
                         // Re-throw to be handled below
                         throw chatServiceError;
                     }
@@ -489,9 +489,11 @@ export class AIClient {
                                 `• gemini-2.0-flash-exp\n` +
                                 `• gemini-2.0-pro-exp\n` +
                                 `• gemini-pro\n` +
-                                `\nNote: "gemini-2.5-pro" might not exist. Try "gemini-1.5-pro" or "gemini-2.0-pro-exp" instead.`;
+                                `\nNote: Model names like "gemini-2.5-pro" or "gemini-3-pro-preview" might not exist.\n` +
+                                `Try "gemini-1.5-pro" or "gemini-2.0-pro-exp" instead.\n` +
+                                `Check SillyTavern's Google model dropdown for valid model names.`;
                         }
-                        
+
                         errorMsg = `Bad Request (400) - The API rejected the request.\n\n` +
                             `Common causes:\n` +
                             `• Invalid model name: "${model}"\n` +

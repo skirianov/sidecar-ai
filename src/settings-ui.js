@@ -226,6 +226,17 @@ export class SettingsUI {
         // Try to get models - if we don't find any, retry after a delay (dropdown might not be populated yet)
         let models = this.getProviderModels(provider);
 
+        // For OpenRouter, if we got fallback models (5 or less), wait longer and retry to get full list
+        // The dropdown might need more time to populate
+        if (provider === 'openrouter' && models.length <= 5) {
+            console.log(`[Sidecar AI] OpenRouter only found ${models.length} models, retrying after longer delay to get full list...`);
+            setTimeout(() => {
+                models = this.getProviderModels(provider);
+                this.populateModelDropdown(modelSelect, models);
+            }, 1500); // Longer delay for OpenRouter
+            return;
+        }
+
         // If no models found, wait a bit and retry (dropdown might be loading)
         if (models.length === 0) {
             console.log(`[Sidecar AI] No models found for ${provider}, retrying after delay...`);
@@ -382,6 +393,8 @@ export class SettingsUI {
         }
 
         // STRATEGY 3: Check OpenRouter specific cache (openrouter_providers)
+        // NOTE: openrouter_providers only contains provider names, not models
+        // So we skip this strategy if it doesn't have actual model data
         if (provider === 'openrouter' && this.context && this.context.chatCompletionSettings) {
             const ccSettings = this.context.chatCompletionSettings;
             if (ccSettings.openrouter_providers) {
@@ -395,11 +408,13 @@ export class SettingsUI {
                 } catch (e) { }
 
                 const providers = ccSettings.openrouter_providers;
+                let foundModels = false;
 
                 // Case A: Object of providers { "openai": { models: [...] } }
                 if (typeof providers === 'object' && !Array.isArray(providers)) {
                     for (const [providerName, providerData] of Object.entries(providers)) {
-                        if (providerData && providerData.models) {
+                        if (providerData && providerData.models && Array.isArray(providerData.models) && providerData.models.length > 0) {
+                            foundModels = true;
                             // Normalize models array
                             const pModels = Array.isArray(providerData.models) ? providerData.models : [];
                             pModels.forEach(m => {
@@ -411,23 +426,28 @@ export class SettingsUI {
                                     default: false
                                 });
                             });
-                        } else if (Array.isArray(providerData)) {
-                            // Case B: Object where values are arrays directly
-                            providerData.forEach(m => {
-                                const id = m.id || m;
-                                models.push({
-                                    value: id,
-                                    label: `${providerName}: ${id}`,
-                                    default: false
+                        } else if (Array.isArray(providerData) && providerData.length > 0) {
+                            // Case B: Object where values are arrays directly (check if they're models, not just provider names)
+                            // If first item has .id or .name, it's likely a model
+                            if (providerData[0] && (providerData[0].id || providerData[0].name)) {
+                                foundModels = true;
+                                providerData.forEach(m => {
+                                    const id = m.id || m;
+                                    models.push({
+                                        value: id,
+                                        label: `${providerName}: ${id}`,
+                                        default: false
+                                    });
                                 });
-                            });
+                            }
                         }
                     }
                 }
                 // Case C: Array of providers
                 else if (Array.isArray(providers)) {
                     providers.forEach(p => {
-                        if (p.models) {
+                        if (p.models && Array.isArray(p.models) && p.models.length > 0) {
+                            foundModels = true;
                             p.models.forEach(m => {
                                 const id = m.id || m;
                                 models.push({
@@ -438,6 +458,14 @@ export class SettingsUI {
                             });
                         }
                     });
+                }
+                
+                // Only return if we actually found models (not just provider names)
+                if (foundModels && models.length > 0) {
+                    console.log('[Sidecar AI] Loaded', models.length, 'models from openrouter_providers');
+                    return models;
+                } else {
+                    console.log('[Sidecar AI] openrouter_providers only contains provider names, not models. Continuing...');
                 }
             }
         }
