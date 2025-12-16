@@ -604,7 +604,7 @@ export class AIClient {
     getRequestHeaders() {
         // Try multiple ways to get request headers
         let headers = null;
-        
+
         // Method 1: Direct global function (most common in SillyTavern)
         if (typeof getRequestHeaders === 'function') {
             try {
@@ -614,7 +614,7 @@ export class AIClient {
                 console.warn('[Sidecar AI] Error calling global getRequestHeaders:', e);
             }
         }
-        
+
         // Method 2: Through window object
         if (!headers && typeof window !== 'undefined') {
             if (window.getRequestHeaders && typeof window.getRequestHeaders === 'function') {
@@ -635,7 +635,7 @@ export class AIClient {
                 }
             }
         }
-        
+
         // Method 3: Through context
         if (!headers && this.context && this.context.getRequestHeaders && typeof this.context.getRequestHeaders === 'function') {
             try {
@@ -645,7 +645,7 @@ export class AIClient {
                 console.warn('[Sidecar AI] Error calling context.getRequestHeaders:', e);
             }
         }
-        
+
         // Fallback: Basic headers (won't work for authenticated endpoints)
         if (!headers) {
             console.warn('[Sidecar AI] getRequestHeaders not found, using basic headers (may cause 403)');
@@ -653,7 +653,7 @@ export class AIClient {
                 'Content-Type': 'application/json'
             };
         }
-        
+
         console.log('[Sidecar AI] Request headers:', Object.keys(headers || {}));
         return headers;
     }
@@ -702,6 +702,45 @@ export class AIClient {
             console.warn('[Sidecar AI] Failed to fetch secret via API:', error);
             return null;
         }
+    }
+
+    /**
+     * Check if API key exists for provider (without fetching the actual value)
+     * This is faster and doesn't require API access
+     * @returns {boolean} True if API key exists, false otherwise
+     */
+    hasProviderApiKey(provider) {
+        if (!provider) {
+            return false;
+        }
+
+        // Method 1: Check Connection Manager profiles
+        if (this.context && this.context.extensionSettings && this.context.extensionSettings.connectionManager) {
+            const profiles = this.context.extensionSettings.connectionManager.profiles || [];
+            const providerLower = provider.toLowerCase();
+            
+            for (const profile of profiles) {
+                if (profile && profile.api?.toLowerCase() === providerLower && profile['secret-id']) {
+                    console.log(`[Sidecar AI] Found connection profile with secret-id for ${provider}`);
+                    return true;
+                }
+            }
+        }
+
+        // Method 2: Check secret_state metadata
+        const secretState = this.getSecretState();
+        if (secretState) {
+            const secretKey = this.getSecretKeyForProvider(provider);
+            if (secretKey && secretState[secretKey]) {
+                const secrets = secretState[secretKey];
+                if (Array.isArray(secrets) && secrets.length > 0) {
+                    console.log(`[Sidecar AI] Found secret_state entry for ${provider}`);
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /**

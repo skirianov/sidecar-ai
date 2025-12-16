@@ -590,18 +590,21 @@ export class SettingsUI {
             return;
         }
 
-        // Check if ST has API key configured
-        const stApiKey = await this.aiClient.getProviderApiKey(provider);
-        if (stApiKey) {
+        // Check if ST has API key configured (check existence without fetching value)
+        // This avoids 403 errors and is faster
+        const hasApiKey = this.aiClient.hasProviderApiKey(provider);
+        if (hasApiKey) {
             apiKeyField.val('Using saved key from SillyTavern');
             apiKeyField.attr('data-using-st-key', 'true');
             apiKeyField.css('font-style', 'italic');
             apiKeyField.css('color', 'var(--SmartThemeBodyColor, #9fc)');
+            console.log(`[Sidecar AI] Prefilled API key field for ${provider} (using saved key)`);
         } else {
             apiKeyField.val('');
             apiKeyField.removeAttr('data-using-st-key');
             apiKeyField.css('font-style', 'normal');
             apiKeyField.css('color', '');
+            console.log(`[Sidecar AI] No saved API key found for ${provider}`);
         }
     }
 
