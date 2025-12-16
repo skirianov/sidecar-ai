@@ -9,6 +9,39 @@
     margin: 0;
 }
 
+/* Disabled inputs styling - match SillyTavern */
+.settings_input:disabled,
+.add_ons_extension_settings *:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+    pointer-events: none;
+}
+
+/* Inline settings - dropdowns and inputs in a line of text (like qvink) */
+select.inline_setting {
+    margin: 0;
+    padding: 0 5px;
+    width: unset !important;
+    min-width: unset !important;
+    max-width: unset !important;
+    height: 1.2em;
+    line-height: 1em;
+}
+
+input.inline_setting {
+    margin: 0;
+    padding: 0 0 0 5px;
+    width: unset !important;
+    min-width: unset !important;
+    max-width: unset !important;
+    height: 1em;
+}
+
+/* Button highlight for unsaved changes */
+.button_highlight {
+    color: var(--active, var(--SmartThemeEmColor));
+}
+
 /* Header */
 .add_ons_header {
     margin-bottom: 1.5em;
@@ -36,8 +69,9 @@
     margin-bottom: 1em;
 }
 
-/* Buttons - Use SillyTavern's menu_button style */
+/* Buttons - Use SillyTavern's menu_button class when possible */
 .add_ons_button {
+    /* Use SillyTavern's menu_button styling if available, fallback to custom */
     padding: 0.5em 1em;
     border: none;
     border-radius: var(--SmartThemeBorderRadius, 4px);
@@ -84,6 +118,11 @@
     background: #c82333;
 }
 
+/* Use SillyTavern's menu_button class when applied */
+.menu_button.add_ons_button {
+    /* Inherit SillyTavern's menu_button styles */
+}
+
 /* Add-ons List */
 .add_ons_list {
     display: flex;
@@ -91,18 +130,21 @@
     gap: 0.75em;
 }
 
-/* Add-on Item Card */
+/* Add-on Item Card - similar to qvink_interface_card */
 .add_ons_item {
     background: var(--SmartThemeBodyColor);
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: var(--SmartThemeBorderRadius, 6px);
     padding: 1em;
     transition: all 0.2s ease;
+    /* Match qvink card styling */
+    margin: 0 0.5em 0.75em 0;
+    box-shadow: -1px 1px 5px rgba(0, 0, 0, 0.3);
 }
 
 .add_ons_item:hover {
     border-color: var(--SmartThemeEmColor);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: -1px 1px 8px rgba(0, 0, 0, 0.4);
 }
 
 .add_ons_item_header {
@@ -315,6 +357,7 @@
     font-size: 0.9em;
 }
 
+/* Use SillyTavern's text_pole class when available, fallback to custom */
 .add_ons_form_group input[type="text"],
 .add_ons_form_group input[type="number"],
 .add_ons_form_group input[type="password"],
@@ -330,6 +373,11 @@
     box-sizing: border-box;
     font-family: inherit;
     transition: border-color 0.2s;
+}
+
+/* When text_pole class is applied, inherit its styles */
+.add_ons_form_group .text_pole {
+    /* SillyTavern's text_pole will override our custom styles */
 }
 
 .add_ons_form_group input:focus,
@@ -509,6 +557,16 @@
 
 .add_ons_trigger_button i {
     font-size: 0.9em;
+}
+
+/* Card styling similar to qvink_interface_card for consistent look */
+.add_ons_card {
+    margin: 0 0.5em;
+    padding: 0.2em 0.5em;
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    box-shadow: -1px 1px 5px rgba(0, 0, 0, 0.3);
+    background: var(--SmartThemeBodyColor);
 }
 
 /* Responsive */
