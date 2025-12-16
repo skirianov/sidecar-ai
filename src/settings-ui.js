@@ -683,7 +683,7 @@ export class SettingsUI {
         const isUsingSTKey = apiKeyField.attr('data-using-st-key') === 'true' || apiKey === 'Using saved key from SillyTavern';
 
         // Get service provider for OpenRouter
-        const serviceProvider = provider === 'openrouter' 
+        const serviceProvider = provider === 'openrouter'
             ? ($('#add_ons_form_service_provider').val() || [])
             : [];
 

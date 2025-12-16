@@ -388,9 +388,36 @@ export class AIClient {
                 } catch (chatServiceError) {
                     console.warn('[Sidecar AI] ChatCompletionService test failed:', chatServiceError);
 
+                    // Extract error message properly
+                    let errorMsg = '';
+                    if (chatServiceError && typeof chatServiceError === 'object') {
+                        // Try to extract meaningful error message
+                        errorMsg = chatServiceError.message || 
+                                  chatServiceError.error?.message || 
+                                  chatServiceError.error?.error?.message ||
+                                  (chatServiceError.error ? JSON.stringify(chatServiceError.error) : '') ||
+                                  String(chatServiceError);
+                    } else {
+                        errorMsg = String(chatServiceError);
+                    }
+
+                    // If using ST key and ChatCompletionService fails, it's likely a configuration issue
+                    // not a CORS issue (since we're using server-side requests)
+                    if (isUsingSTKey) {
+                        // Better error message for ST key users
+                        throw new Error(
+                            `Connection test failed: ${errorMsg}\n\n` +
+                            `The API key is configured in SillyTavern, but the connection test failed.\n` +
+                            `Possible issues:\n` +
+                            `- Invalid model name: "${model}"\n` +
+                            `- API key doesn't have access to this model\n` +
+                            `- Provider configuration issue in SillyTavern\n\n` +
+                            `Check SillyTavern's API Connection settings and verify the model name is correct.`
+                        );
+                    }
+
                     // For CORS-blocking providers, don't fall back to direct API
                     if (isCorsBlocking) {
-                        const errorMsg = chatServiceError.message || String(chatServiceError);
                         throw new Error(
                             `ChatCompletionService failed: ${errorMsg}\n\n` +
                             `This provider (${provider}) blocks browser requests.\n\n` +
