@@ -1624,14 +1624,17 @@ export class ResultFormatter {
 
             // If addonManager is provided, restore blocks for this message if they exist in metadata
             // but haven't been restored yet
-            if (addonManager && message.extra?.sidecarResults) {
+            const swipeId = message.swipe_id ?? 0;
+            const sidecarResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults || message.extra?.sidecarResults;
+            
+            if (addonManager && sidecarResults) {
                 const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(messageIndex);
                 if (messageElement) {
                     const allAddons = addonManager.getAllAddons();
                     for (const addon of allAddons) {
                         if (!addon.enabled) continue;
 
-                        const stored = message.extra.sidecarResults[addon.id];
+                        const stored = sidecarResults[addon.id];
                         if (!stored) continue;
 
                         // Check if block already exists
@@ -1705,17 +1708,21 @@ export class ResultFormatter {
                 }
 
                 // Check each add-on for saved results in this message
+                // Check current swipe variant first, then fall back to message.extra
+                const swipeId = message.swipe_id ?? 0;
+                const sidecarResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults || message.extra?.sidecarResults;
+                
                 for (const addon of allAddons) {
                     if (!addon.enabled) {
                         continue; // Skip disabled add-ons
                     }
 
-                    // Get result from message.extra.sidecarResults
-                    if (!message.extra?.sidecarResults?.[addon.id]) {
+                    // Get result from current swipe variant or message.extra
+                    if (!sidecarResults?.[addon.id]) {
                         continue;
                     }
 
-                    const stored = message.extra.sidecarResults[addon.id];
+                    const stored = sidecarResults[addon.id];
                     const result = stored.result;
 
                     if (result && result.length > 0 && result.length < 100000) {
