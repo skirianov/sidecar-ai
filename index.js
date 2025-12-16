@@ -274,9 +274,8 @@ async function loadModules() {
             }
         };
 
-        // Restore immediately after initialization (with cleanup)
+        // Restore immediately after initialization
         setTimeout(() => {
-            resultFormatter.cleanupHiddenSidecarCards();
             restoreBlocks();
         }, 500);
 
@@ -293,9 +292,10 @@ async function loadModules() {
                 if (eventType) {
                     context.eventSource.on(eventType, () => {
                         console.log(`[Sidecar AI] Chat load event detected: ${eventType}`);
-                        // Clean up hidden cards first, then restore visible ones
+                        // Restore blocks for loaded chat
+                        // Note: We don't call cleanupHiddenSidecarCards() here anymore
+                        // because swipe navigation is handled by MESSAGE_SWIPED events
                         setTimeout(() => {
-                            resultFormatter.cleanupHiddenSidecarCards();
                             resultFormatter.restoreBlocksFromMetadata(addonManager);
                         }, 500);
                     });
@@ -348,8 +348,9 @@ async function loadModules() {
                 if (!hasRestored && chatContainer.querySelectorAll('.mes, .message').length > 0) {
                     hasRestored = true;
                     setTimeout(() => {
-                        // Clean up hidden cards first, then restore visible ones
-                        resultFormatter.cleanupHiddenSidecarCards();
+                        // Restore blocks for initial chat load
+                        // Note: We don't call cleanupHiddenSidecarCards() here anymore
+                        // because swipe navigation is handled by MESSAGE_SWIPED events
                         resultFormatter.restoreBlocksFromMetadata(addonManager);
                     }, 1000);
                     // Stop observing after first restoration
@@ -367,8 +368,9 @@ async function loadModules() {
                 setTimeout(() => {
                     if (!hasRestored) {
                         hasRestored = true;
-                        // Clean up hidden cards first, then restore visible ones
-                        resultFormatter.cleanupHiddenSidecarCards();
+                        // Restore blocks for already-loaded messages
+                        // Note: We don't call cleanupHiddenSidecarCards() here anymore
+                        // because swipe navigation is handled by MESSAGE_SWIPED events
                         resultFormatter.restoreBlocksFromMetadata(addonManager);
                     }
                 }, 1500);

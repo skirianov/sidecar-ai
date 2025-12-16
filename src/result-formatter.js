@@ -1168,46 +1168,17 @@ export class ResultFormatter {
     }
 
     /**
-     * Clean up sidecar cards for messages that are no longer visible
-     * Only removes cards for messages that are truly hidden/off-screen
+     * Clean up orphaned sidecar containers (containers without a parent message element)
+     * This is a minimal cleanup that only removes truly orphaned containers.
+     * We no longer clean up based on visibility since swipe navigation is handled by events.
      */
     cleanupHiddenSidecarCards() {
         try {
-            // Track recently restored containers (give them grace period)
-            const now = Date.now();
-            if (!this._restoredContainers) {
-                this._restoredContainers = new Map();
-            }
-
-            // Clean up old entries (older than 2 seconds)
-            for (const [container, timestamp] of this._restoredContainers.entries()) {
-                if (now - timestamp > 2000) {
-                    this._restoredContainers.delete(container);
-                }
-            }
-
-            // Get all visible message IDs (not just active, but all visible ones)
-            const visibleMessageIds = new Set();
-            const allMessages = document.querySelectorAll('[id^="mes_"], [data-message-id]');
-            allMessages.forEach(msg => {
-                if (this.isMessageVisible(msg)) {
-                    const msgId = msg.id || msg.getAttribute('data-message-id');
-                    if (msgId) {
-                        visibleMessageIds.add(msgId);
-                    }
-                }
-            });
-
             // Find all sidecar containers
             const allContainers = document.querySelectorAll('.sidecar-container');
             let cleanedCount = 0;
 
             allContainers.forEach(container => {
-                // Skip recently restored containers (grace period)
-                if (this._restoredContainers.has(container)) {
-                    return;
-                }
-
                 // Find the parent message element
                 let messageElement = container.closest('[id^="mes_"], [data-message-id]');
 
@@ -1227,46 +1198,21 @@ export class ResultFormatter {
                     }
                 }
 
+                // Only remove if we can't find the message element (truly orphaned)
                 if (!messageElement) {
-                    // If we can't find the message element, remove the container
                     container.remove();
                     cleanedCount++;
-                    return;
-                }
-
-                // Get message ID
-                const messageId = messageElement.id || messageElement.getAttribute('data-message-id');
-
-                // Only remove if message is truly hidden/not visible
-                // Don't remove just because it's not the "active" one - keep all visible messages' cards
-                if (!this.isMessageVisible(messageElement)) {
-                    container.remove();
-                    cleanedCount++;
-                    console.log(`[Sidecar AI] Cleaned up sidecar container for hidden message ${messageId}`);
-                } else if (messageId && visibleMessageIds.size > 0 && !visibleMessageIds.has(messageId)) {
-                    // If we have visible messages tracked and this one isn't in the list, it might be off-screen
-                    // But be more lenient - only remove if it's clearly off-screen
-                    const rect = messageElement.getBoundingClientRect();
-                    const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-                    const viewportHeight = window.innerHeight || document.documentElement.clientHeight;
-
-                    // Only remove if clearly outside viewport with margin
-                    if (rect.right < -100 || rect.left > viewportWidth + 100 ||
-                        rect.bottom < -100 || rect.top > viewportHeight + 100) {
-                        container.remove();
-                        cleanedCount++;
-                        console.log(`[Sidecar AI] Cleaned up sidecar container for off-screen message ${messageId}`);
-                    }
+                    console.log(`[Sidecar AI] Cleaned up orphaned sidecar container`);
                 }
             });
 
             if (cleanedCount > 0) {
-                console.log(`[Sidecar AI] Cleaned up ${cleanedCount} sidecar container(s) for hidden/off-screen messages`);
+                console.log(`[Sidecar AI] Cleaned up ${cleanedCount} orphaned sidecar container(s)`);
             }
 
             return cleanedCount;
         } catch (error) {
-            console.error('[Sidecar AI] Error cleaning up hidden sidecar cards:', error);
+            console.error('[Sidecar AI] Error cleaning up orphaned sidecar cards:', error);
             return 0;
         }
     }
