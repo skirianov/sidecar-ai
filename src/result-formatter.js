@@ -699,4 +699,145 @@ export class ResultFormatter {
             message.mesId ||
             `msg_${Date.now()}`;
     }
+
+    /**
+     * Restore all blocks from saved metadata when chat loads
+     * Scans chat log and restores UI blocks for all saved results
+     */
+    async restoreBlocksFromMetadata(addonManager) {
+        try {
+            console.log('[Sidecar AI] Restoring blocks from metadata...');
+
+            const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+            if (!Array.isArray(chatLog) || chatLog.length === 0) {
+                console.log('[Sidecar AI] No chat log found, skipping restoration');
+                return 0;
+            }
+
+            const allAddons = addonManager.getAllAddons();
+            let restoredCount = 0;
+
+            // Wait a bit for DOM to be ready
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Iterate through all messages in chat log (only AI messages)
+            for (let i = 0; i < chatLog.length; i++) {
+                const message = chatLog[i];
+                if (!message || !message.mes || message.is_user) {
+                    continue; // Skip user messages and empty messages
+                }
+
+                const messageId = this.getMessageId(message);
+
+                // Check each add-on for saved results in this message
+                for (const addon of allAddons) {
+                    if (!addon.enabled) {
+                        continue; // Skip disabled add-ons
+                    }
+
+                    // Look for storage tag for this add-on
+                    const pattern = new RegExp(`<!-- sidecar-storage:${addon.id}:(.+?) -->`);
+                    const match = message.mes.match(pattern);
+
+                    if (match && match[1]) {
+                        try {
+                            // Decode the stored result
+                            const decoded = decodeURIComponent(escape(atob(match[1])));
+
+                            if (decoded && decoded.length > 0 && decoded.length < 100000) {
+                                // Restore the block based on response location
+                                if (addon.responseLocation === 'chatHistory') {
+                                    // For chatHistory, check if result is already in the message content
+                                    // The result might be embedded directly or as a comment
+                                    const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
+                                    if (messageElement) {
+                                        const contentArea = messageElement.querySelector('.mes_text') ||
+                                            messageElement.querySelector('.message') ||
+                                            messageElement;
+
+                                        if (contentArea) {
+                                            // Check if result is already displayed
+                                            const resultTag = `<!-- addon-result:${addon.id} -->`;
+                                            const hasResult = contentArea.innerHTML &&
+                                                (contentArea.innerHTML.includes(resultTag) ||
+                                                    contentArea.innerHTML.includes(decoded.substring(0, 50)));
+
+                                            if (!hasResult) {
+                                                // Restore the formatted result
+                                                const formatted = this.formatResult(addon, decoded, message, false);
+                                                this.injectIntoChatHistory(messageId, addon, formatted);
+                                                restoredCount++;
+                                                console.log(`[Sidecar AI] Restored chatHistory block for ${addon.name} in message ${messageId}`);
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // For outsideChatlog, restore dropdown UI
+                                    const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
+                                    if (messageElement) {
+                                        // Check if block already exists
+                                        const existingBlock = messageElement.querySelector(`.addon-section-${addon.id}`);
+                                        if (!existingBlock) {
+                                            // Restore the dropdown block
+                                            const formatted = this.formatResult(addon, decoded, message, true);
+                                            const success = this.injectIntoDropdown(addon, formatted, messageId);
+                                            if (success) {
+                                                restoredCount++;
+                                                console.log(`[Sidecar AI] Restored dropdown block for ${addon.name} in message ${messageId}`);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (error) {
+                            console.warn(`[Sidecar AI] Failed to restore block for ${addon.name} in message ${messageId}:`, error);
+                        }
+                    }
+                }
+            }
+
+            console.log(`[Sidecar AI] Restored ${restoredCount} block(s) from metadata`);
+            return restoredCount;
+        } catch (error) {
+            console.error('[Sidecar AI] Error restoring blocks from metadata:', error);
+            return 0;
+        }
+    }
+
+    /**
+     * Find message element by index in chat log
+     * Matches AI messages in DOM to AI messages in chat log by position
+     */
+    findMessageElementByIndex(chatLogIndex) {
+        const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+        if (chatLogIndex < 0 || chatLogIndex >= chatLog.length) {
+            return null;
+        }
+
+        // Count AI messages up to this index
+        let aiMessageCount = 0;
+        for (let i = 0; i <= chatLogIndex; i++) {
+            const msg = chatLog[i];
+            if (msg && !msg.is_user && msg.mes) {
+                if (i === chatLogIndex) {
+                    // This is the message we're looking for
+                    // Now find the corresponding DOM element
+                    const messageElements = document.querySelectorAll('.mes, .message');
+                    let currentAiIndex = 0;
+                    for (let j = 0; j < messageElements.length; j++) {
+                        if (this.isAIMessageElement(messageElements[j])) {
+                            if (currentAiIndex === aiMessageCount) {
+                                return messageElements[j];
+                            }
+                            currentAiIndex++;
+                        }
+                    }
+                    break;
+                }
+                aiMessageCount++;
+            }
+        }
+
+        return null;
+    }
 }

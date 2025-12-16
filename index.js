@@ -185,6 +185,9 @@ async function loadModules() {
         // Add "Run Sidecar" to Extensions menu
         addSidecarToExtensionsMenu(eventHandler);
 
+        // Restore blocks from saved metadata after DOM is ready
+        restoreBlocksOnLoad(context, resultFormatter, addonManager);
+
         // Export for manual triggering
         window.addOnsExtension = {
             triggerAddons: (addonIds = null) => {
@@ -232,6 +235,84 @@ async function loadModules() {
 
             console.log('[Sidecar AI] Dropdown UI initialized');
         }, 500);
+    }
+
+    /**
+     * Restore blocks from saved metadata when chat loads
+     */
+    function restoreBlocksOnLoad(context, resultFormatter, addonManager) {
+        // Wait for DOM to be ready and chat to be loaded
+        const restoreBlocks = async () => {
+            try {
+                // Wait a bit for chat to render
+                await new Promise(resolve => setTimeout(resolve, 1000));
+
+                // Restore blocks from metadata
+                await resultFormatter.restoreBlocksFromMetadata(addonManager);
+            } catch (error) {
+                console.error('[Sidecar AI] Error restoring blocks on load:', error);
+            }
+        };
+
+        // Restore immediately after initialization
+        restoreBlocks();
+
+        // Also listen for chat load events if available
+        if (context.eventSource && context.event_types) {
+            const chatLoadEvents = [
+                context.event_types.CHAT_LOADED,
+                context.event_types.CHAT_CHANGED,
+                'CHAT_LOADED',
+                'CHAT_CHANGED'
+            ].filter(Boolean);
+
+            chatLoadEvents.forEach(eventType => {
+                if (eventType) {
+                    context.eventSource.on(eventType, () => {
+                        console.log(`[Sidecar AI] Chat load event detected: ${eventType}`);
+                        // Delay restoration to ensure DOM is updated
+                        setTimeout(() => {
+                            resultFormatter.restoreBlocksFromMetadata(addonManager);
+                        }, 500);
+                    });
+                }
+            });
+        }
+
+        // Fallback: Use MutationObserver to detect when chat messages are rendered
+        const chatContainer = document.querySelector('#chat_container') ||
+            document.querySelector('.chat_container') ||
+            document.querySelector('#chat');
+
+        if (chatContainer) {
+            let hasRestored = false;
+            const observer = new MutationObserver(() => {
+                // Only restore once when messages first appear
+                if (!hasRestored && chatContainer.querySelectorAll('.mes, .message').length > 0) {
+                    hasRestored = true;
+                    setTimeout(() => {
+                        resultFormatter.restoreBlocksFromMetadata(addonManager);
+                    }, 1000);
+                    // Stop observing after first restoration
+                    observer.disconnect();
+                }
+            });
+
+            observer.observe(chatContainer, {
+                childList: true,
+                subtree: true
+            });
+
+            // Also check immediately in case messages are already loaded
+            if (chatContainer.querySelectorAll('.mes, .message').length > 0) {
+                setTimeout(() => {
+                    if (!hasRestored) {
+                        hasRestored = true;
+                        resultFormatter.restoreBlocksFromMetadata(addonManager);
+                    }
+                }, 1500);
+            }
+        }
     }
 
     function addSidecarToExtensionsMenu(eventHandler) {
