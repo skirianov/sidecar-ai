@@ -11,6 +11,8 @@ export class EventHandler {
         this.aiClient = aiClient;
         this.resultFormatter = resultFormatter;
         this.isProcessing = false;
+        // Performance: Debounce save operations
+        this.saveChatTimeout = null;
     }
 
     /**
@@ -395,10 +397,8 @@ export class EventHandler {
         // Save metadata for history retrieval (and persistence)
         this.resultFormatter.saveResultToMetadata(message, addon, response);
 
-        // Trigger save to ensure metadata persists
-        if (this.context.saveChat) {
-            this.context.saveChat();
-        }
+        // Trigger debounced save to ensure metadata persists
+        this.debouncedSaveChat();
     }
 
     /**
@@ -416,5 +416,66 @@ export class EventHandler {
             }
         }
         return null;
+    }
+
+    /**
+     * Debounced save chat function to prevent excessive save calls
+     * Waits 500ms after last call before actually saving
+     * Includes error recovery and retry logic
+     */
+    debouncedSaveChat() {
+        if (this.saveChatTimeout) {
+            clearTimeout(this.saveChatTimeout);
+        }
+
+        this.saveChatTimeout = setTimeout(() => {
+            let saveSuccessful = false;
+
+            // Primary: Try saveChat
+            if (this.context.saveChat) {
+                try {
+                    this.context.saveChat();
+                    console.log('[Sidecar AI] Chat saved (debounced)');
+                    saveSuccessful = true;
+                } catch (error) {
+                    console.error('[Sidecar AI] Error saving chat:', error);
+                    // Continue to fallback
+                }
+            }
+
+            // Fallback 1: Try saveSettingsDebounced
+            if (!saveSuccessful && this.context.saveSettingsDebounced) {
+                try {
+                    this.context.saveSettingsDebounced();
+                    console.log('[Sidecar AI] Settings saved as fallback for chat persistence');
+                    saveSuccessful = true;
+                } catch (error) {
+                    console.error('[Sidecar AI] Error saving settings as fallback:', error);
+                }
+            }
+
+            // Fallback 2: Try direct saveSettings if available
+            if (!saveSuccessful && this.context.saveSettings) {
+                try {
+                    this.context.saveSettings();
+                    console.log('[Sidecar AI] Settings saved directly as last resort');
+                    saveSuccessful = true;
+                } catch (error) {
+                    console.error('[Sidecar AI] Error saving settings directly:', error);
+                }
+            }
+
+            // Log warning if all save methods failed
+            if (!saveSuccessful) {
+                console.warn('[Sidecar AI] All save methods failed - metadata may not persist');
+                console.warn('[Sidecar AI] Available context methods:', {
+                    hasSaveChat: !!this.context.saveChat,
+                    hasSaveSettingsDebounced: !!this.context.saveSettingsDebounced,
+                    hasSaveSettings: !!this.context.saveSettings
+                });
+            }
+
+            this.saveChatTimeout = null;
+        }, 500);
     }
 }

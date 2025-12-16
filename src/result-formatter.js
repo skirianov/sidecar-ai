@@ -6,6 +6,10 @@
 export class ResultFormatter {
     constructor(context) {
         this.context = context;
+        // Performance: Cache DOM queries
+        this.cachedAIMessageElement = null;
+        this.lastMessageCount = 0;
+        this.cacheInvalidationTime = 0;
     }
 
     /**
@@ -152,9 +156,26 @@ export class ResultFormatter {
 
         html = result.join('\n');
 
-        // Preserve line breaks - convert to <br> tags
-        // But don't add <br> after block elements
-        html = html.replace(/\n(?!<\/?(h\d|ul|ol|li|p|pre|hr|div))/g, '<br>');
+        // Normalize whitespace - remove excessive blank lines
+        html = html.replace(/\n{3,}/g, '\n\n');
+
+        // Convert paragraphs - wrap consecutive non-block lines in <p> tags
+        // Split by double newlines to identify paragraphs
+        const paragraphs = html.split(/\n\n+/);
+        html = paragraphs.map(para => {
+            const trimmed = para.trim();
+            if (!trimmed) return '';
+
+            // If it's already a block element, return as-is
+            if (trimmed.match(/^<(h\d|ul|ol|pre|blockquote|hr|div)/i)) {
+                return trimmed;
+            }
+
+            // Otherwise wrap in <p> tag
+            // Convert single newlines within paragraph to <br>
+            const withBreaks = trimmed.replace(/\n(?!$)/g, '<br>');
+            return `<p>${withBreaks}</p>`;
+        }).filter(p => p).join('\n\n');
 
         return html;
     }
@@ -297,20 +318,49 @@ export class ResultFormatter {
 
     /**
      * Find the latest AI message element in the DOM
+     * Performance: Uses caching to avoid repeated DOM queries
      */
     findAIMessageElement() {
-        // Get all message elements
+        // Get current message count
         const messageElements = document.querySelectorAll('.mes, .message');
+        const currentCount = messageElements.length;
+
+        // Return cached element if message count unchanged and cache is recent (< 2 seconds)
+        const now = Date.now();
+        if (this.cachedAIMessageElement &&
+            currentCount === this.lastMessageCount &&
+            (now - this.cacheInvalidationTime) < 2000) {
+            // Verify cached element is still in DOM
+            if (document.contains(this.cachedAIMessageElement)) {
+                return this.cachedAIMessageElement;
+            }
+        }
+
+        // Update cache
+        this.lastMessageCount = currentCount;
+        this.cacheInvalidationTime = now;
 
         // Search backwards to find the latest AI message
         for (let i = messageElements.length - 1; i >= 0; i--) {
             const element = messageElements[i];
             if (this.isAIMessageElement(element)) {
+                this.cachedAIMessageElement = element;
                 return element;
             }
         }
 
+        this.cachedAIMessageElement = null;
         return null;
+    }
+
+    /**
+     * Invalidate the cached AI message element
+     * Call this when a new message is added
+     */
+    invalidateCache() {
+        this.cachedAIMessageElement = null;
+        this.lastMessageCount = 0;
+        this.cacheInvalidationTime = Date.now();
     }
 
     /**
@@ -479,28 +529,72 @@ export class ResultFormatter {
     /**
      * Save result to message metadata (hidden comment) for history retrieval
      * This ensures state persistence regardless of display mode
+     * Includes error recovery and verification
      */
     saveResultToMetadata(message, addon, result) {
-        if (!message || !addon || !result) return;
+        if (!message || !addon || !result) {
+            console.warn('[Sidecar AI] Cannot save metadata: missing required parameters');
+            return false;
+        }
 
         try {
             // Encode result to Base64 to avoid HTML comment syntax conflicts
             // Use utf-8 safe encoding
             const encoded = btoa(unescape(encodeURIComponent(result)));
+
+            // Verify encoding worked correctly
+            try {
+                const testDecode = decodeURIComponent(escape(atob(encoded)));
+                if (testDecode !== result) {
+                    console.warn('[Sidecar AI] Encoding verification failed, but continuing...');
+                }
+            } catch (verifyError) {
+                console.error('[Sidecar AI] Encoding verification error:', verifyError);
+                // Continue anyway - might still work
+            }
+
             const storageTag = `<!-- sidecar-storage:${addon.id}:${encoded} -->`;
+
+            // Ensure message.mes exists
+            if (!message.mes) {
+                message.mes = '';
+            }
 
             // Append to message content if not already present (avoid duplicates)
             // We append to the 'mes' property which acts as the source of truth
-            if (message.mes && !message.mes.includes(`sidecar-storage:${addon.id}:`)) {
+            if (!message.mes.includes(`sidecar-storage:${addon.id}:`)) {
                 message.mes += '\n' + storageTag;
-
-                // If this is a DOM element, we can't easily update it here without potentially duplicating
-                // But since we updated the object, ST should handle saving
-                // We mainly care about the object being updated for next turns
-                console.log(`[Sidecar AI] Saved result metadata for ${addon.name}`);
+                console.log(`[Sidecar AI] Saved result metadata for ${addon.name} (${result.length} chars)`);
+                return true;
+            } else {
+                // Update existing storage tag
+                const pattern = new RegExp(`<!-- sidecar-storage:${addon.id}:[^>]+ -->`, 'g');
+                message.mes = message.mes.replace(pattern, storageTag);
+                console.log(`[Sidecar AI] Updated result metadata for ${addon.name}`);
+                return true;
             }
         } catch (error) {
             console.error(`[Sidecar AI] Error saving result metadata:`, error);
+            console.error(`[Sidecar AI] Error details:`, {
+                addonId: addon?.id,
+                addonName: addon?.name,
+                resultLength: result?.length,
+                messageId: message?.uid || message?.id,
+                errorMessage: error.message
+            });
+
+            // Try fallback: save to a simpler format
+            try {
+                if (message.mes) {
+                    const fallbackTag = `<!-- sidecar-fallback:${addon.id}:${Date.now()} -->`;
+                    message.mes += '\n' + fallbackTag;
+                    console.warn(`[Sidecar AI] Saved fallback metadata tag for ${addon.name}`);
+                }
+            } catch (fallbackError) {
+                console.error(`[Sidecar AI] Fallback save also failed:`, fallbackError);
+            }
+
+            return false;
         }
     }
 

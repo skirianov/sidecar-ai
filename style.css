@@ -173,7 +173,9 @@
 }
 
 /* Modal - These need to be top level as they might be appended to body, 
-   but let's scope them with a unique class prefix or ID */
+   but let's scope them with a unique class prefix or ID 
+   NOTE: Using unique class name (.add_ons_modal) to avoid conflicts.
+   All child selectors are scoped to this parent. */
 .add_ons_modal {
     position: fixed;
     z-index: 10000;
@@ -729,24 +731,46 @@
 }
 
 /* Markdown Content Styling within Results */
+/* Improved spacing and typography for better readability */
+
+.addon_result_content > *:first-child {
+    margin-top: 0 !important;
+}
+
 .addon_result_content h1 {
     font-size: 1.25em !important;
     font-weight: 700 !important;
-    margin: 0.5em 0 0.3em 0 !important;
+    margin: 0.8em 0 0.4em 0 !important;
+    margin-top: 0.8em !important;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
-    padding-bottom: 0.2em !important;
+    padding-bottom: 0.3em !important;
+    line-height: 1.3 !important;
+}
+
+.addon_result_content h1:first-child {
+    margin-top: 0 !important;
 }
 
 .addon_result_content h2 {
     font-size: 1.15em !important;
     font-weight: 600 !important;
-    margin: 0.5em 0 0.3em 0 !important;
+    margin: 0.7em 0 0.35em 0 !important;
+    line-height: 1.35 !important;
+}
+
+.addon_result_content h2:first-child {
+    margin-top: 0 !important;
 }
 
 .addon_result_content h3 {
     font-size: 1.1em !important;
     font-weight: 600 !important;
-    margin: 0.4em 0 0.2em 0 !important;
+    margin: 0.6em 0 0.3em 0 !important;
+    line-height: 1.4 !important;
+}
+
+.addon_result_content h3:first-child {
+    margin-top: 0 !important;
 }
 
 .addon_result_content h4, 
@@ -754,12 +778,20 @@
 .addon_result_content h6 {
     font-size: 1em !important;
     font-weight: 600 !important;
-    margin: 0.3em 0 0.2em 0 !important;
+    margin: 0.5em 0 0.25em 0 !important;
+    line-height: 1.4 !important;
+}
+
+.addon_result_content h4:first-child,
+.addon_result_content h5:first-child,
+.addon_result_content h6:first-child {
+    margin-top: 0 !important;
 }
 
 .addon_result_content p {
-    margin: 0 0 0.8em 0 !important;
-    line-height: 1.5 !important;
+    margin: 0 0 0.9em 0 !important;
+    line-height: 1.6 !important;
+    word-spacing: 0.05em !important;
 }
 
 .addon_result_content p:last-child {
@@ -768,20 +800,46 @@
 
 .addon_result_content ul, 
 .addon_result_content ol {
-    margin: 0 0 0.8em 0 !important;
-    padding-left: 1.2em !important;
+    margin: 0.8em 0 0.9em 0 !important;
+    padding-left: 1.5em !important;
+    line-height: 1.6 !important;
+}
+
+.addon_result_content ul:first-child,
+.addon_result_content ol:first-child {
+    margin-top: 0 !important;
+}
+
+.addon_result_content ul:last-child,
+.addon_result_content ol:last-child {
+    margin-bottom: 0 !important;
 }
 
 .addon_result_content li {
-    margin-bottom: 0.3em !important;
+    margin-bottom: 0.4em !important;
+    line-height: 1.5 !important;
+}
+
+.addon_result_content li:last-child {
+    margin-bottom: 0 !important;
 }
 
 .addon_result_content blockquote {
-    margin: 0 0 0.8em 0 !important;
-    padding-left: 0.8em !important;
+    margin: 0.8em 0 0.9em 0 !important;
+    padding: 0.5em 0 0.5em 1em !important;
     border-left: 3px solid var(--SmartThemeEmColor, #9fc) !important;
-    color: rgba(255, 255, 255, 0.7) !important;
+    color: rgba(255, 255, 255, 0.75) !important;
     font-style: italic !important;
+    background: rgba(255, 255, 255, 0.03) !important;
+    border-radius: 0 3px 3px 0 !important;
+}
+
+.addon_result_content blockquote:first-child {
+    margin-top: 0 !important;
+}
+
+.addon_result_content blockquote:last-child {
+    margin-bottom: 0 !important;
 }
 
 .addon_result_content code {
@@ -794,10 +852,20 @@
 
 .addon_result_content pre {
     background: rgba(0, 0, 0, 0.3) !important;
-    padding: 0.8em !important;
+    padding: 0.9em !important;
     border-radius: 5px !important;
     overflow-x: auto !important;
-    margin: 0 0 0.8em 0 !important;
+    margin: 0.8em 0 0.9em 0 !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    line-height: 1.5 !important;
+}
+
+.addon_result_content pre:first-child {
+    margin-top: 0 !important;
+}
+
+.addon_result_content pre:last-child {
+    margin-bottom: 0 !important;
 }
 
 .addon_result_content pre code {
@@ -822,8 +890,14 @@
 
 .addon_result_content hr {
     border: none !important;
-    border-top: 1px solid rgba(255, 255, 255, 0.1) !important;
-    margin: 1em 0 !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.15) !important;
+    margin: 1.2em 0 !important;
+    height: 0 !important;
+}
+
+.addon_result_content hr:first-child,
+.addon_result_content hr:last-child {
+    margin: 0 !important;
 }
 
 /* Custom scrollbar styling for result content */
@@ -883,9 +957,44 @@
 }
 
 /* Responsive design */
-@media (max-width: 600px) {
+
+/* Tablets and small laptops (768px - 1024px) */
+@media (max-width: 1024px) {
+    .add_ons_modal_content {
+        width: 85% !important;
+        max-width: 650px !important;
+    }
+
+    .add_ons_form_row {
+        gap: 12px;
+    }
+
+    .sidecar-container {
+        padding: 10px !important;
+    }
+
+    .addon_result_content {
+        padding: 12px !important;
+        max-height: 400px !important;
+    }
+}
+
+/* Mobile landscape and small tablets (480px - 768px) */
+@media (max-width: 768px) {
+    .add_ons_modal_content {
+        width: 90% !important;
+        max-width: none !important;
+        max-height: 90vh !important;
+    }
+
+    .add_ons_modal_body {
+        padding: 15px !important;
+        max-height: calc(90vh - 120px) !important;
+    }
+
     .add_ons_form_row {
         grid-template-columns: 1fr;
+        gap: 12px;
     }
 
     .sidecar-container {
@@ -895,16 +1004,176 @@
 
     .addon_result_content {
         padding: 10px !important;
-        max-height: 300px !important;
+        max-height: 350px !important;
+        font-size: 0.95em !important;
     }
 
+    /* Touch-friendly buttons */
+    #sidecar_ai_settings .menu_button,
+    .add_ons_modal .menu_button {
+        min-height: 44px !important;
+        min-width: 44px !important;
+        padding: 8px 14px !important;
+    }
+
+    /* Extensions menu adjustments */
+    #sidecar_manual_select {
+        width: 90px !important;
+        max-width: 90px !important;
+        font-size: 0.8em !important;
+    }
+
+    #sidecar_run_btn {
+        min-width: 32px !important;
+        min-height: 32px !important;
+    }
+
+    /* Service provider dropdown */
+    #add_ons_form_service_provider {
+        max-height: 150px !important;
+    }
+}
+
+/* Mobile portrait (< 480px) */
+@media (max-width: 480px) {
     .add_ons_modal_content {
         width: 95% !important;
         max-height: 95vh !important;
+        border-radius: 8px !important;
+    }
+
+    .add_ons_modal_header {
+        padding: 12px !important;
+    }
+
+    .add_ons_modal_header h3 {
+        font-size: 1em !important;
     }
 
     .add_ons_modal_body {
-        padding: 15px !important;
+        padding: 12px !important;
         max-height: calc(95vh - 100px) !important;
+    }
+
+    .add_ons_form_row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .add_ons_form_group {
+        margin-bottom: 12px;
+    }
+
+    .sidecar-container {
+        padding: 6px !important;
+        margin-top: 6px !important;
+        border-radius: 4px !important;
+    }
+
+    .addon_result_content {
+        padding: 8px !important;
+        max-height: 300px !important;
+        font-size: 0.9em !important;
+    }
+
+    /* Markdown content adjustments for mobile */
+    .addon_result_content h1 {
+        font-size: 1.15em !important;
+        margin: 0.4em 0 0.25em 0 !important;
+    }
+
+    .addon_result_content h2 {
+        font-size: 1.1em !important;
+        margin: 0.35em 0 0.2em 0 !important;
+    }
+
+    .addon_result_content h3 {
+        font-size: 1.05em !important;
+        margin: 0.3em 0 0.15em 0 !important;
+    }
+
+    .addon_result_content p {
+        margin-bottom: 0.6em !important;
+        line-height: 1.4 !important;
+    }
+
+    .addon_result_content ul,
+    .addon_result_content ol {
+        margin-bottom: 0.6em !important;
+        padding-left: 1em !important;
+    }
+
+    /* Touch-friendly controls */
+    #sidecar_ai_settings .menu_button,
+    .add_ons_modal .menu_button {
+        min-height: 48px !important;
+        min-width: 48px !important;
+        padding: 10px 16px !important;
+        font-size: 0.95em !important;
+    }
+
+    #sidecar_ai_settings .add_ons_toggle {
+        width: 44px !important;
+        height: 24px !important;
+    }
+
+    #sidecar_ai_settings .add_ons_toggle_slider:before {
+        height: 18px !important;
+        width: 18px !important;
+    }
+
+    /* Extensions menu - stack vertically on very small screens */
+    #sidecar_manual_select {
+        width: 100% !important;
+        max-width: 100% !important;
+        margin-bottom: 5px !important;
+        margin-right: 0 !important;
+        font-size: 0.85em !important;
+    }
+
+    #sidecar_run_btn {
+        width: 100% !important;
+        min-width: 100% !important;
+        min-height: 36px !important;
+    }
+
+    /* Service provider dropdown */
+    #add_ons_form_service_provider {
+        max-height: 120px !important;
+    }
+
+    /* Add-on item cards */
+    .add_ons_item {
+        padding: 10px !important;
+        margin: 0 0.25em !important;
+    }
+
+    .add_ons_item_header {
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+
+    .add_ons_item_actions {
+        width: 100% !important;
+        justify-content: flex-end !important;
+    }
+}
+
+/* Touch optimization - use :active instead of :hover for better mobile experience */
+@media (hover: none) and (pointer: coarse) {
+    #sidecar_ai_settings .menu_button:active,
+    .add_ons_modal .menu_button:active {
+        background: var(--SmartThemeEmColor, rgba(153, 255, 204, 0.3)) !important;
+        transform: scale(0.98);
+    }
+
+    #sidecar_ai_settings .add_ons_item:active {
+        border-color: var(--SmartThemeEmColor, #9fc) !important;
+        transform: scale(0.99);
+    }
+
+    .addon_result_summary:active {
+        background: var(--SmartThemeEmColor, rgba(153, 255, 204, 0.25)) !important;
     }
 }

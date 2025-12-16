@@ -133,6 +133,7 @@ export class ContextBuilder {
 
     /**
      * Get add-on history from chat log metadata
+     * Includes error recovery for corrupted or invalid data
      */
     getAddonHistory(chatLog, addonId, count) {
         if (!chatLog || !Array.isArray(chatLog) || !addonId) {
@@ -152,9 +153,22 @@ export class ContextBuilder {
                         // Decode base64 content
                         // Handle unicode strings correctly
                         const decoded = decodeURIComponent(escape(atob(match[1])));
-                        history.unshift(decoded); // Add to front to maintain chronological order
+
+                        // Verify decoded content is valid (not empty, reasonable length)
+                        if (decoded && decoded.length > 0 && decoded.length < 100000) {
+                            history.unshift(decoded); // Add to front to maintain chronological order
+                        } else {
+                            console.warn(`[Sidecar AI] Skipped invalid history item (length: ${decoded?.length || 0})`);
+                        }
                     } catch (e) {
                         console.warn('[Sidecar AI] Failed to decode history item:', e);
+                        console.warn('[Sidecar AI] History item details:', {
+                            addonId,
+                            messageIndex: i,
+                            matchLength: match[1]?.length,
+                            error: e.message
+                        });
+                        // Continue to next item instead of failing completely
                     }
                 }
             }

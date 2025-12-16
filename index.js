@@ -276,8 +276,21 @@ async function loadModules() {
             const select = menuItem.querySelector('#sidecar_manual_select');
             const runBtn = menuItem.querySelector('#sidecar_run_btn');
 
-            // Function to update the select options
+            // Performance: Debounce dropdown updates
+            let lastAddonUpdate = 0;
+            let updateTimeout = null;
+
             const updateSelectOptions = () => {
+                const now = Date.now();
+                // Debounce: only update if 100ms have passed since last update
+                if (now - lastAddonUpdate < 100) {
+                    if (updateTimeout) clearTimeout(updateTimeout);
+                    updateTimeout = setTimeout(updateSelectOptions, 100);
+                    return;
+                }
+
+                lastAddonUpdate = now;
+
                 const manualAddons = eventHandler.addonManager.getEnabledAddons()
                     .filter(addon => addon.triggerMode === 'manual');
 
@@ -297,7 +310,7 @@ async function loadModules() {
                 }
             };
 
-            // Update options on interaction
+            // Update options on interaction (debounced)
             select.addEventListener('mousedown', updateSelectOptions);
             // Also update initially
             updateSelectOptions();
