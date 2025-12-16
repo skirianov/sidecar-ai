@@ -381,18 +381,38 @@ export class AIClient {
             throw new Error('No API key provided and ChatCompletionService not available');
         } catch (error) {
             console.error('[Sidecar AI] Connection test failed:', error);
+            console.error('[Sidecar AI] Error details:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
+            
             const errorMessage = error.message || String(error);
-            return {
-                success: false,
-                message: errorMessage.includes('401') || errorMessage.includes('Unauthorized')
-                    ? 'Invalid API key'
-                    : errorMessage.includes('404') || errorMessage.includes('Not Found')
-                        ? 'Invalid model or endpoint'
-                        : errorMessage.includes('429')
-                            ? 'Rate limit exceeded'
-                            : errorMessage.includes('403') || errorMessage.includes('Forbidden')
-                                ? 'API key does not have permission'
-                                : `Connection failed: ${errorMessage}`
+            
+            // Handle specific error cases
+            if (errorMessage.includes('401') || errorMessage.includes('Unauthorized')) {
+                return { success: false, message: 'Invalid API key - check your credentials' };
+            }
+            if (errorMessage.includes('404') || errorMessage.includes('Not Found')) {
+                return { success: false, message: 'Invalid model or endpoint - verify model name and API URL' };
+            }
+            if (errorMessage.includes('429')) {
+                return { success: false, message: 'Rate limit exceeded - try again later' };
+            }
+            if (errorMessage.includes('403') || errorMessage.includes('Forbidden')) {
+                return { success: false, message: 'API key does not have permission' };
+            }
+            if (errorMessage.includes('Network error') || errorMessage.includes('fetch')) {
+                return { success: false, message: `Network error: ${errorMessage}. Check endpoint URL and CORS settings.` };
+            }
+            if (errorMessage.includes('CORS')) {
+                return { success: false, message: 'CORS error - endpoint may not allow browser requests. Try using a proxy.' };
+            }
+            
+            // Default error message
+            return { 
+                success: false, 
+                message: errorMessage || 'Unknown error occurred. Check browser console for details.' 
             };
         }
     }
@@ -423,26 +443,73 @@ export class AIClient {
             headers['X-Title'] = 'Sidecar AI';
         }
 
-        const response = await fetch(endpoint, {
-            method: 'POST',
-            headers: headers,
-            body: JSON.stringify(requestBody)
-        });
+        try {
+            console.log(`[Sidecar AI] Testing connection to: ${endpoint}`);
+            console.log(`[Sidecar AI] Request body:`, JSON.stringify(requestBody, null, 2));
 
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`API request failed: ${response.status} ${errorText}`);
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify(requestBody)
+            });
+
+            console.log(`[Sidecar AI] Response status: ${response.status} ${response.statusText}`);
+
+            if (!response.ok) {
+                let errorText = '';
+                try {
+                    errorText = await response.text();
+                    // Try to parse as JSON for better error messages
+                    try {
+                        const errorJson = JSON.parse(errorText);
+                        if (errorJson.error) {
+                            errorText = errorJson.error.message || errorJson.error.code || JSON.stringify(errorJson.error);
+                        } else {
+                            errorText = JSON.stringify(errorJson);
+                        }
+                    } catch (e) {
+                        // Not JSON, use as-is
+                    }
+                } catch (e) {
+                    errorText = `HTTP ${response.status}: ${response.statusText}`;
+                }
+
+                const errorMessage = errorText || `HTTP ${response.status}`;
+                throw new Error(`API request failed: ${response.status} - ${errorMessage}`);
+            }
+
+            let data;
+            try {
+                data = await response.json();
+            } catch (e) {
+                throw new Error(`Invalid JSON response: ${e.message}`);
+            }
+
+            console.log(`[Sidecar AI] Response data:`, data);
+
+            // Verify we got a valid response
+            const content = this.extractContent(data, provider);
+            if (!content && !data.choices && !data.content) {
+                console.warn('[Sidecar AI] Response structure:', data);
+                // For some providers, empty content might be valid for test
+                // Check if we at least got a valid response structure
+                if (data.id || data.model || data.usage) {
+                    return { success: true, message: 'Connection successful (empty response)' };
+                }
+                throw new Error('Invalid response format - no content or choices found');
+            }
+
+            return { success: true, message: 'Connection successful' };
+        } catch (error) {
+            // Handle network errors (CORS, connection refused, etc.)
+            if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                console.error('[Sidecar AI] Network error:', error);
+                throw new Error(`Network error: ${error.message}. Check if endpoint is correct and CORS is enabled.`);
+            }
+            
+            // Re-throw other errors as-is
+            throw error;
         }
-
-        const data = await response.json();
-
-        // Verify we got a valid response
-        const content = this.extractContent(data, provider);
-        if (!content && !data.choices && !data.content) {
-            throw new Error('Invalid response format');
-        }
-
-        return { success: true, message: 'Connection successful' };
     }
 
     /**
