@@ -543,77 +543,104 @@ export class SettingsUI {
             return;
         }
 
-        // Try to get API key from SillyTavern's connection profiles (primary method)
+        console.log('[Sidecar AI] Loading API key for provider:', provider);
+
+        // Map provider names to SillyTavern's SECRET_KEYS
+        const secretKeyMap = {
+            'openai': 'api_key_openai',
+            'openrouter': 'api_key_openrouter',
+            'anthropic': 'api_key_claude',
+            'google': 'api_key_makersuite',
+            'deepseek': 'api_key_deepseek',
+            'cohere': 'api_key_cohere',
+            'custom': 'api_key_custom',
+        };
+
+        const secretKey = secretKeyMap[provider];
         let apiKey = null;
 
-        // Method 1: Check mainApi for connection profiles
-        if (this.context && this.context.mainApi) {
-            const mainApi = this.context.mainApi;
+        // Method 1: Check secret_state (SillyTavern's primary API key storage)
+        if (typeof window !== 'undefined' && window.secret_state) {
+            console.log('[Sidecar AI] Checking window.secret_state');
+            if (secretKey && window.secret_state[secretKey]) {
+                apiKey = window.secret_state[secretKey];
+                console.log('[Sidecar AI] Found API key in secret_state');
+            }
+        }
 
-            // Check mainApi's connection profiles
-            if (mainApi.connectionProfiles) {
-                const profiles = Object.values(mainApi.connectionProfiles || {});
+        // Method 2: Check if secret_state is imported/available via context
+        if (!apiKey && this.context) {
+            // Try to access secret_state through various paths
+            if (this.context.secret_state && secretKey) {
+                apiKey = this.context.secret_state[secretKey];
+                console.log('[Sidecar AI] Found API key in context.secret_state');
+            }
+        }
+
+        // Method 3: Check connection manager extension profiles (if available)
+        if (!apiKey && this.context && this.context.extensionSettings) {
+            const extSettings = this.context.extensionSettings;
+            if (extSettings.connectionManager && extSettings.connectionManager.profiles) {
+                console.log('[Sidecar AI] Checking connection manager profiles');
+                const profiles = extSettings.connectionManager.profiles;
                 for (const profile of profiles) {
-                    if (profile && (profile.api_provider === provider || profile.provider === provider)) {
+                    // Match by API provider name or chat_completion_source
+                    const profileApi = profile.api || profile.chat_completion_source;
+                    if (profileApi === provider || profileApi === secretKey) {
                         if (profile.api_key) {
                             apiKey = profile.api_key;
+                            console.log('[Sidecar AI] Found API key in connection manager profile');
                             break;
                         }
                     }
                 }
             }
+        }
 
-            // Check mainApi's current profile
-            if (!apiKey && mainApi.currentProfile) {
-                const profile = mainApi.currentProfile;
-                if (profile && (profile.api_provider === provider || profile.provider === provider)) {
-                    if (profile.api_key) {
-                        apiKey = profile.api_key;
-                    }
+        // Method 4: Try to read from DOM (SillyTavern stores keys in hidden inputs)
+        if (!apiKey && secretKey) {
+            const inputSelectors = [
+                `#${secretKey}`,
+                `.${secretKey}`,
+                `input[name="${secretKey}"]`,
+                `input[data-secret-key="${secretKey}"]`
+            ];
+            
+            for (const selector of inputSelectors) {
+                const $input = $(selector);
+                if ($input.length && $input.val()) {
+                    apiKey = $input.val();
+                    console.log(`[Sidecar AI] Found API key in DOM: ${selector}`);
+                    break;
                 }
             }
         }
 
-        // Method 2: Check settings.connection_profiles
-        if (!apiKey && this.context && this.context.settings && this.context.settings.connection_profiles) {
-            const profiles = Object.values(this.context.settings.connection_profiles || {});
-            for (const profile of profiles) {
-                if (profile && (profile.api_provider === provider || profile.provider === provider)) {
-                    if (profile.api_key) {
-                        apiKey = profile.api_key;
-                        break;
+        // Method 5: Check mainApi array for connection profiles
+        if (!apiKey && this.context && this.context.mainApi) {
+            const mainApi = this.context.mainApi;
+            if (Array.isArray(mainApi)) {
+                console.log('[Sidecar AI] Checking mainApi array');
+                for (const profile of mainApi) {
+                    if (profile && typeof profile === 'object') {
+                        const profileProvider = (profile.api_provider || profile.provider || profile.name || '').toLowerCase();
+                        if (profileProvider === provider.toLowerCase() && profile.api_key) {
+                            apiKey = profile.api_key;
+                            console.log('[Sidecar AI] Found API key in mainApi profile');
+                            break;
+                        }
                     }
                 }
-            }
-        }
-
-        // Method 3: Check connection profiles directly in context
-        if (!apiKey && this.context && this.context.connection_profiles) {
-            const profiles = Object.values(this.context.connection_profiles || {});
-            for (const profile of profiles) {
-                if (profile && (profile.api_provider === provider || profile.provider === provider)) {
-                    if (profile.api_key) {
-                        apiKey = profile.api_key;
-                        break;
+            } else if (mainApi.connectionProfiles) {
+                const profiles = Object.values(mainApi.connectionProfiles || {});
+                for (const profile of profiles) {
+                    if (profile && (profile.api_provider === provider || profile.provider === provider)) {
+                        if (profile.api_key) {
+                            apiKey = profile.api_key;
+                            console.log('[Sidecar AI] Found API key in mainApi.connectionProfiles');
+                            break;
+                        }
                     }
-                }
-            }
-        }
-
-        // Method 4: Check settings.api_keys
-        if (!apiKey && this.context && this.context.settings) {
-            if (this.context.settings.api_keys && this.context.settings.api_keys[provider]) {
-                apiKey = this.context.settings.api_keys[provider];
-            }
-        }
-
-        // Method 5: Try global ST API key storage
-        if (!apiKey && typeof window !== 'undefined') {
-            if (window.mainApiManager && window.mainApiManager.getApiKey) {
-                try {
-                    apiKey = window.mainApiManager.getApiKey(provider);
-                } catch (e) {
-                    console.log('[Sidecar AI] mainApiManager.getApiKey error:', e);
                 }
             }
         }
@@ -621,8 +648,15 @@ export class SettingsUI {
         if (apiKey) {
             $('#add_ons_form_api_key').val(apiKey);
             $('#add_ons_form_api_key').attr('placeholder', 'Using API key from SillyTavern settings');
+            console.log('[Sidecar AI] Successfully loaded API key');
         } else {
-            alert(`No API key found for ${provider} in SillyTavern settings. Please configure it in Settings > API Connection first.`);
+            console.warn('[Sidecar AI] No API key found. Checked:', {
+                secretKey,
+                hasWindowSecretState: typeof window !== 'undefined' && !!window.secret_state,
+                hasContext: !!this.context,
+                hasConnectionManager: !!(this.context?.extensionSettings?.connectionManager)
+            });
+            alert(`No API key found for ${provider} in SillyTavern settings.\n\nPlease configure it in:\nSettings > API Connection\n\nOr enter it manually in this form.`);
         }
     }
 
