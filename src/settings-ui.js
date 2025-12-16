@@ -245,117 +245,112 @@ export class SettingsUI {
 
         console.log('[Sidecar AI] Loading models for provider:', provider);
 
-        // Method 1: Try mainApi - SillyTavern's API connection manager
-        if (this.context && this.context.mainApi) {
-            console.log('[Sidecar AI] Found mainApi, checking for models...');
-            const mainApi = this.context.mainApi;
-            console.log('[Sidecar AI] mainApi keys:', Object.keys(mainApi));
-
-            // Check if mainApi has getModels or similar method
-            if (typeof mainApi.getModels === 'function') {
-                try {
-                    const stModels = mainApi.getModels(provider);
-                    console.log('[Sidecar AI] mainApi.getModels result:', stModels);
-                    if (stModels && Array.isArray(stModels)) {
-                        console.log('[Sidecar AI] Found models via mainApi.getModels:', stModels.length);
-                        models = stModels.map(m => ({
-                            value: m.id || m.name || m,
-                            label: m.name || m.label || m.id || m,
-                            default: m.default || false
-                        }));
-                    }
-                } catch (e) {
-                    console.log('[Sidecar AI] mainApi.getModels error:', e);
-                }
-            }
-
-            // Check mainApi's provider registry - this is likely where models are stored
-            if (models.length === 0) {
-                // Try different property names
-                const providerKeys = ['providers', 'providerRegistry', 'apiProviders', 'modelRegistry'];
-                for (const key of providerKeys) {
-                    if (mainApi[key]) {
-                        console.log(`[Sidecar AI] Found mainApi.${key}:`, Object.keys(mainApi[key]));
-                        const providerData = mainApi[key][provider];
-                        if (providerData) {
-                            console.log(`[Sidecar AI] Provider data keys:`, Object.keys(providerData));
-                            // Check for models in various locations
-                            const modelKeys = ['models', 'modelList', 'availableModels', 'model_options'];
-                            for (const modelKey of modelKeys) {
-                                if (providerData[modelKey] && Array.isArray(providerData[modelKey])) {
-                                    console.log(`[Sidecar AI] Found ${modelKey} with ${providerData[modelKey].length} models`);
-                                    models = providerData[modelKey].map(m => {
-                                        // Handle different model formats
-                                        if (typeof m === 'string') {
-                                            return { value: m, label: m, default: false };
-                                        }
-                                        return {
-                                            value: m.id || m.value || m.name || m,
-                                            label: m.label || m.name || m.id || m.value || m,
-                                            default: m.default || false
-                                        };
-                                    });
-                                    if (models.length > 0) break;
-                                }
-                            }
-                            if (models.length > 0) break;
+        // Method 1: Check chatCompletionSettings for provider-specific model lists
+        // SillyTavern stores models here (e.g., openrouter_providers contains the model list)
+        if (this.context && this.context.chatCompletionSettings) {
+            const ccSettings = this.context.chatCompletionSettings;
+            
+            // For OpenRouter, check openrouter_providers which contains the model list
+            if (provider === 'openrouter' && ccSettings.openrouter_providers) {
+                console.log('[Sidecar AI] Found openrouter_providers');
+                const providers = ccSettings.openrouter_providers;
+                
+                // openrouter_providers is an object where keys are provider names
+                // Each provider has a models array
+                if (typeof providers === 'object') {
+                    const allModels = [];
+                    for (const [providerName, providerData] of Object.entries(providers)) {
+                        if (providerData && providerData.models && Array.isArray(providerData.models)) {
+                            providerData.models.forEach(model => {
+                                // Format: "provider:model" for OpenRouter
+                                const modelId = model.id || model.value || model;
+                                const modelLabel = model.label || model.name || modelId;
+                                allModels.push({
+                                    value: modelId,
+                                    label: `${providerName}: ${modelLabel}`,
+                                    default: model.default || false
+                                });
+                            });
                         }
                     }
-                }
-            }
-
-            // Check current connection profile for models
-            if (models.length === 0 && mainApi.currentProfile) {
-                console.log('[Sidecar AI] Checking mainApi.currentProfile');
-                const profile = mainApi.currentProfile;
-                if (profile && (profile.api_provider === provider || profile.provider === provider)) {
-                    console.log('[Sidecar AI] Profile keys:', Object.keys(profile));
-                    if (profile.models && Array.isArray(profile.models)) {
-                        models = profile.models.map(m => ({
-                            value: m.id || m.name || m,
-                            label: m.name || m.label || m.id || m,
-                            default: m.default || false
-                        }));
+                    if (allModels.length > 0) {
+                        console.log('[Sidecar AI] Found', allModels.length, 'OpenRouter models');
+                        models = allModels;
                     }
                 }
             }
+            
+            // For other providers, check provider-specific model settings
+            const providerModelKey = `${provider}_model`;
+            if (models.length === 0 && ccSettings[providerModelKey]) {
+                // This might just be the selected model, not the list
+                // But let's check if there's a model list nearby
+                console.log(`[Sidecar AI] Found ${providerModelKey}:`, ccSettings[providerModelKey]);
+            }
+        }
 
-            // Check connection profiles in mainApi
-            if (models.length === 0 && mainApi.connectionProfiles) {
-                console.log('[Sidecar AI] Found mainApi.connectionProfiles');
-                const profiles = Object.values(mainApi.connectionProfiles || {});
-                for (const profile of profiles) {
-                    if (profile && (profile.api_provider === provider || profile.provider === provider)) {
-                        console.log('[Sidecar AI] Profile keys:', Object.keys(profile));
+        // Method 2: Try mainApi - it's an array of connection profiles!
+        if (models.length === 0 && this.context && this.context.mainApi) {
+            console.log('[Sidecar AI] Found mainApi array, length:', this.context.mainApi.length);
+            const mainApi = this.context.mainApi;
+            
+            // Iterate through connection profiles in the array
+            for (let i = 0; i < mainApi.length; i++) {
+                const profile = mainApi[i];
+                if (profile && typeof profile === 'object') {
+                    console.log(`[Sidecar AI] Profile ${i} keys:`, Object.keys(profile));
+                    
+                    // Check if this profile matches our provider
+                    const profileProvider = profile.api_provider || profile.provider || profile.name;
+                    if (profileProvider === provider || profile.name === provider) {
+                        console.log(`[Sidecar AI] Found matching profile for ${provider}`);
+                        
+                        // Check for models in the profile
                         if (profile.models && Array.isArray(profile.models)) {
-                            models = profile.models.map(m => ({
-                                value: m.id || m.name || m,
-                                label: m.name || m.label || m.id || m,
+                            console.log(`[Sidecar AI] Found ${profile.models.length} models in profile`);
+                            models = profile.models.map(m => {
+                                if (typeof m === 'string') {
+                                    return { value: m, label: m, default: false };
+                                }
+                                return {
+                                    value: m.id || m.value || m.name || m,
+                                    label: m.label || m.name || m.id || m.value || m,
+                                    default: m.default || false
+                                };
+                            });
+                            break;
+                        }
+                        
+                        // Check for modelList or availableModels
+                        if (profile.modelList && Array.isArray(profile.modelList)) {
+                            models = profile.modelList.map(m => ({
+                                value: m.id || m.value || m.name || m,
+                                label: m.label || m.name || m.id || m.value || m,
                                 default: m.default || false
                             }));
-                            if (models.length > 0) break;
+                            break;
                         }
                     }
                 }
             }
         }
 
-        // Method 2: Check chatCompletionSettings - models might be stored there
-        if (models.length === 0 && this.context && this.context.chatCompletionSettings) {
-            console.log('[Sidecar AI] Checking chatCompletionSettings...');
-            const ccSettings = this.context.chatCompletionSettings;
-            console.log('[Sidecar AI] chatCompletionSettings keys:', Object.keys(ccSettings));
-            
-            // Check for provider-specific settings
-            if (ccSettings[provider]) {
-                const providerSettings = ccSettings[provider];
-                console.log('[Sidecar AI] Provider settings keys:', Object.keys(providerSettings));
-                if (providerSettings.models && Array.isArray(providerSettings.models)) {
-                    models = providerSettings.models.map(m => ({
-                        value: m.id || m.name || m,
-                        label: m.name || m.label || m.id || m,
-                        default: m.default || false
-                    }));
+        // Method 3: Check if there's a global model registry
+        if (models.length === 0 && typeof window !== 'undefined') {
+            // Check for model registries that SillyTavern might use
+            const registryKeys = ['modelRegistry', 'apiModelRegistry', 'providerModels', 'availableModels'];
+            for (const key of registryKeys) {
+                if (window[key] && window[key][provider]) {
+                    const providerModels = window[key][provider];
+                    if (Array.isArray(providerModels)) {
+                        console.log(`[Sidecar AI] Found models in window.${key}`);
+                        models = providerModels.map(m => ({
+                            value: m.id || m.value || m.name || m,
+                            label: m.label || m.name || m.id || m.value || m,
+                            default: m.default || false
+                        }));
+                        break;
+                    }
                 }
             }
         }
