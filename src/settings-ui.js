@@ -220,14 +220,14 @@ export class SettingsUI {
         modelSelect.append('<option value="">Loading models...</option>');
 
         const models = this.getProviderModels(provider);
-        
+
         setTimeout(() => {
             modelSelect.empty();
             if (models.length === 0) {
                 modelSelect.append('<option value="">No models available</option>');
                 return;
             }
-            
+
             models.forEach(model => {
                 const option = $('<option></option>').val(model.value).text(model.label);
                 if (model.default) {
@@ -239,54 +239,116 @@ export class SettingsUI {
     }
 
     getProviderModels(provider) {
-        // Try to get models from SillyTavern's API connection settings
-        if (this.context && this.context.api_settings) {
-            const providerSettings = this.context.api_settings[provider];
-            if (providerSettings && providerSettings.models) {
-                return providerSettings.models.map(m => ({
-                    value: m.id || m.name,
-                    label: m.name || m.id,
-                    default: m.default || false
-                }));
+        // Try to get models from SillyTavern's API connection system
+        // SillyTavern stores models in connection profiles or API settings
+        let models = [];
+
+        // Method 1: Try connection profiles (most common in ST)
+        if (this.context && this.context.connection_profiles) {
+            // Look for profiles matching the provider
+            const profiles = Object.values(this.context.connection_profiles || {});
+            for (const profile of profiles) {
+                if (profile && profile.api_provider === provider) {
+                    // Check if profile has model list
+                    if (profile.models && Array.isArray(profile.models)) {
+                        models = profile.models.map(m => ({
+                            value: m.id || m.name || m,
+                            label: m.name || m.label || m.id || m,
+                            default: m.default || false
+                        }));
+                        if (models.length > 0) break;
+                    }
+                }
             }
         }
 
-        // Fallback: return default models for each provider
-        const defaultModels = {
-            'openai': [
-                { value: 'gpt-4o', label: 'GPT-4o', default: false },
-                { value: 'gpt-4-turbo', label: 'GPT-4 Turbo', default: false },
-                { value: 'gpt-4', label: 'GPT-4', default: false },
-                { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo', default: true }
-            ],
-            'openrouter': [
-                { value: 'openai/gpt-4o', label: 'OpenAI GPT-4o', default: false },
-                { value: 'openai/gpt-4-turbo', label: 'OpenAI GPT-4 Turbo', default: false },
-                { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', default: false },
-                { value: 'google/gemini-pro-1.5', label: 'Google Gemini Pro 1.5', default: false },
-                { value: 'openai/gpt-3.5-turbo', label: 'OpenAI GPT-3.5 Turbo', default: true }
-            ],
-            'deepseek': [
-                { value: 'deepseek-chat', label: 'DeepSeek Chat', default: true },
-                { value: 'deepseek-coder', label: 'DeepSeek Coder', default: false }
-            ],
-            'anthropic': [
-                { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet', default: true },
-                { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus', default: false },
-                { value: 'claude-3-sonnet-20240229', label: 'Claude 3 Sonnet', default: false },
-                { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku', default: false }
-            ],
-            'google': [
-                { value: 'gemini-pro', label: 'Gemini Pro', default: true },
-                { value: 'gemini-pro-vision', label: 'Gemini Pro Vision', default: false }
-            ],
-            'cohere': [
-                { value: 'command', label: 'Command', default: true },
-                { value: 'command-light', label: 'Command Light', default: false }
-            ]
-        };
+        // Method 2: Try API settings directly
+        if (models.length === 0 && this.context && this.context.api_settings) {
+            const providerSettings = this.context.api_settings[provider];
+            if (providerSettings) {
+                // Check various possible locations for models
+                if (providerSettings.models && Array.isArray(providerSettings.models)) {
+                    models = providerSettings.models.map(m => ({
+                        value: m.id || m.name || m,
+                        label: m.name || m.label || m.id || m,
+                        default: m.default || false
+                    }));
+                } else if (providerSettings.model_list && Array.isArray(providerSettings.model_list)) {
+                    models = providerSettings.model_list.map(m => ({
+                        value: m.id || m.name || m,
+                        label: m.name || m.label || m.id || m,
+                        default: m.default || false
+                    }));
+                }
+            }
+        }
 
-        return defaultModels[provider] || [];
+        // Method 3: Try to access ST's global model registry
+        if (models.length === 0 && typeof window !== 'undefined') {
+            // SillyTavern might expose models globally
+            if (window.SillyTavern && window.SillyTavern.models) {
+                const stModels = window.SillyTavern.models[provider];
+                if (stModels && Array.isArray(stModels)) {
+                    models = stModels.map(m => ({
+                        value: m.id || m.name || m,
+                        label: m.name || m.label || m.id || m,
+                        default: m.default || false
+                    }));
+                }
+            }
+
+            // Try alternative global paths
+            if (models.length === 0 && window.api_providers) {
+                const providerData = window.api_providers[provider];
+                if (providerData && providerData.models) {
+                    models = providerData.models.map(m => ({
+                        value: m.id || m.name || m,
+                        label: m.name || m.label || m.id || m,
+                        default: m.default || false
+                    }));
+                }
+            }
+        }
+
+        // Method 4: Fallback to default models if nothing found
+        if (models.length === 0) {
+            const defaultModels = {
+                'openai': [
+                    { value: 'gpt-4o', label: 'GPT-4o', default: false },
+                    { value: 'gpt-4-turbo', label: 'GPT-4 Turbo', default: false },
+                    { value: 'gpt-4', label: 'GPT-4', default: false },
+                    { value: 'gpt-3.5-turbo', label: 'GPT-3.5 Turbo', default: true }
+                ],
+                'openrouter': [
+                    { value: 'openai/gpt-4o', label: 'OpenAI GPT-4o', default: false },
+                    { value: 'openai/gpt-4-turbo', label: 'OpenAI GPT-4 Turbo', default: false },
+                    { value: 'anthropic/claude-3.5-sonnet', label: 'Claude 3.5 Sonnet', default: false },
+                    { value: 'google/gemini-pro-1.5', label: 'Google Gemini Pro 1.5', default: false },
+                    { value: 'openai/gpt-3.5-turbo', label: 'OpenAI GPT-3.5 Turbo', default: true }
+                ],
+                'deepseek': [
+                    { value: 'deepseek-chat', label: 'DeepSeek Chat', default: true },
+                    { value: 'deepseek-coder', label: 'DeepSeek Coder', default: false }
+                ],
+                'anthropic': [
+                    { value: 'claude-3-5-sonnet-20241022', label: 'Claude 3.5 Sonnet', default: true },
+                    { value: 'claude-3-opus-20240229', label: 'Claude 3 Opus', default: false },
+                    { value: 'claude-3-sonnet-20240229', label: 'Claude 3 Sonnet', default: false },
+                    { value: 'claude-3-haiku-20240307', label: 'Claude 3 Haiku', default: false }
+                ],
+                'google': [
+                    { value: 'gemini-pro', label: 'Gemini Pro', default: true },
+                    { value: 'gemini-pro-vision', label: 'Gemini Pro Vision', default: false }
+                ],
+                'cohere': [
+                    { value: 'command', label: 'Command', default: true },
+                    { value: 'command-light', label: 'Command Light', default: false }
+                ]
+            };
+            models = defaultModels[provider] || [];
+        }
+
+        return models;
     }
 
     loadAPIKeyFromST() {
@@ -296,20 +358,44 @@ export class SettingsUI {
             return;
         }
 
-        // Try to get API key from SillyTavern's settings
+        // Try to get API key from SillyTavern's connection profiles (primary method)
         let apiKey = null;
-        
-        if (this.context && this.context.api_settings) {
+
+        // Method 1: Check connection profiles (ST's main way)
+        if (this.context && this.context.connection_profiles) {
+            const profiles = Object.values(this.context.connection_profiles || {});
+            for (const profile of profiles) {
+                if (profile && profile.api_provider === provider) {
+                    if (profile.api_key) {
+                        apiKey = profile.api_key;
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Method 2: Check API settings directly
+        if (!apiKey && this.context && this.context.api_settings) {
             const providerSettings = this.context.api_settings[provider];
             if (providerSettings && providerSettings.api_key) {
                 apiKey = providerSettings.api_key;
             }
         }
 
-        // Try alternative paths
+        // Method 3: Check settings.api_keys
         if (!apiKey && this.context && this.context.settings) {
             if (this.context.settings.api_keys && this.context.settings.api_keys[provider]) {
                 apiKey = this.context.settings.api_keys[provider];
+            }
+        }
+
+        // Method 4: Try global ST API key storage
+        if (!apiKey && typeof window !== 'undefined') {
+            if (window.SillyTavern && window.SillyTavern.api_keys) {
+                apiKey = window.SillyTavern.api_keys[provider];
+            }
+            if (!apiKey && window.api_keys) {
+                apiKey = window.api_keys[provider];
             }
         }
 

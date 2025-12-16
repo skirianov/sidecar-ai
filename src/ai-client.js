@@ -300,19 +300,42 @@ export class AIClient {
 
     /**
      * Get API key for provider from SillyTavern settings
+     * Uses same approach as SillyTavern's API connection system
      */
     getProviderApiKey(provider) {
-        // Try to get from SillyTavern's API settings
-        if (this.context.api_settings) {
+        // Method 1: Check connection profiles (ST's primary method)
+        if (this.context && this.context.connection_profiles) {
+            const profiles = Object.values(this.context.connection_profiles || {});
+            for (const profile of profiles) {
+                if (profile && profile.api_provider === provider) {
+                    if (profile.api_key) {
+                        return profile.api_key;
+                    }
+                }
+            }
+        }
+
+        // Method 2: Check API settings directly
+        if (this.context && this.context.api_settings) {
             const providerSettings = this.context.api_settings[provider];
             if (providerSettings && providerSettings.api_key) {
                 return providerSettings.api_key;
             }
         }
 
-        // Try alternative paths
-        if (this.context.settings && this.context.settings.api_keys) {
+        // Method 3: Check settings.api_keys
+        if (this.context && this.context.settings && this.context.settings.api_keys) {
             return this.context.settings.api_keys[provider];
+        }
+
+        // Method 4: Try global ST storage
+        if (typeof window !== 'undefined') {
+            if (window.SillyTavern && window.SillyTavern.api_keys) {
+                return window.SillyTavern.api_keys[provider];
+            }
+            if (window.api_keys) {
+                return window.api_keys[provider];
+            }
         }
 
         return null;
