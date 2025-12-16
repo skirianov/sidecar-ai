@@ -1,161 +1,79 @@
-# 📚 Sidecar AI Documentation
+# Documentation
 
-Welcome to the Sidecar AI documentation hub!
+Quick reference for Sidecar AI features and usage.
 
 ## Getting Started
 
-### New Users Start Here
-1. **[Installation Guide](../README.md#-installation)** - Get Sidecar AI running
-2. **[Quick Start](../README.md#-quick-start)** - Create your first sidecar
-3. **[AI Template Maker Guide](AI-MAKER-GUIDE.md)** - Easiest way to create sidecars
+1. [Installation](../README.md#installation) - Get it set up
+2. [Quick Start](../README.md#quick-start) - Create your first sidecar
+3. [AI Template Maker Guide](AI-MAKER-GUIDE.md) - Use AI to generate templates
 
-### For Template Users
-1. **[Template Installation](../templates/INSTALLATION.md)** - Import pre-made templates
-2. **[Template Library](../templates/README.md)** - Browse available templates
-3. **[Creating Templates](../templates/README.md#creating-your-own-templates)** - Make your own
+## What's a Sidecar?
 
-## Core Concepts
-
-### What is a Sidecar?
-
-A **sidecar** is an auxiliary AI task that runs alongside your main conversation. Examples:
+A sidecar is an extra AI task that runs alongside your main conversation. Like:
 - Reader comment sections
 - Emotion tracking
 - Relationship stats
 - Meta-commentary
 - Scene descriptions
-- Behind-the-scenes content
 
-### Why Use Sidecars?
+You use cheap models for these so your expensive model can focus on roleplay.
 
-**Cost Optimization:** Run auxiliary tasks on cheap models (GPT-4o-mini, Deepseek) while keeping expensive models (GPT-4, Claude Opus) for main roleplay.
+## Documentation
 
-**Rich Experiences:** Add meta-layers, tracking, and commentary without cluttering your main conversation.
-
-**Flexibility:** Auto-trigger for consistent tracking, or manual-trigger for optional features.
-
-## Documentation Index
-
-### User Guides
-- **[Main README](../README.md)** - Overview, installation, basic usage
-- **[AI Template Maker](AI-MAKER-GUIDE.md)** - Create sidecars with AI assistance
-- **[Template Library](../templates/README.md)** - Pre-made configurations
-- **[Template Installation](../templates/INSTALLATION.md)** - Quick start with templates
-
-### Technical Documentation
-- **[Security](../SECURITY.md)** - Threat model and security measures
-- **[Changelog](../CHANGELOG.md)** - Version history and changes
-- **[Contributing](../README.md#-development)** - How to contribute
-
-## Feature Guides
-
-### AI Template Maker
-The easiest way to create sidecars - just describe what you want!
-- [Complete Guide](AI-MAKER-GUIDE.md)
-- [Example Prompts](AI-MAKER-GUIDE.md#step-by-step-guide)
-- [Tips for Better Results](AI-MAKER-GUIDE.md#tips-for-better-results)
-
-### Template Library
-Pre-made configurations ready to import:
-- [Available Templates](../templates/README.md#available-templates)
-- [Installation Methods](../templates/INSTALLATION.md)
-- [Creating Your Own](../templates/README.md#creating-your-own-templates)
-
-### Advanced Features
-- [Batch Processing](../README.md#batch-processing)
-- [Manual Triggering](../README.md#manual-triggering-via-console)
-- [Context Control](../README.md#context-control)
+- [Main README](../README.md) - Overview and installation
+- [AI Template Maker](AI-MAKER-GUIDE.md) - Generate templates with AI
+- [Template Library](../templates/README.md) - Pre-made templates
+- [Template Installation](../templates/INSTALLATION.md) - How to import templates
+- [Security](../SECURITY.md) - Technical security details
+- [Changelog](../CHANGELOG.md) - What changed in each version
 
 ## Quick Reference
 
-### Trigger Modes
-- **Auto:** Runs after every AI response
-- **Manual:** Trigger via Extensions menu button
+**Trigger Modes:**
+- Auto: Runs after every AI response
+- Manual: Trigger via Extensions menu
 
-### Format Styles
-- **HTML+CSS:** Rich visual formatting (default, recommended)
-- **Markdown:** Simple text formatting
-- **XML:** Structured data
-- **Beautify:** Creative, theatrical styling
+**Format Styles:**
+- HTML+CSS: Rich visual formatting (default)
+- Markdown: Simple text
+- XML: Structured data
+- Beautify: Creative styling
 
-### Response Locations
-- **Outside Chatlog:** Shows in expandable cards (recommended)
-- **Chat History:** Injects as HTML comment (accessible to main AI)
+**Response Locations:**
+- Outside Chatlog: Expandable cards below messages (recommended)
+- Chat History: HTML comment in message (main AI can see it)
 
-### Context Settings
-- **messagesCount:** How many recent messages (1-50)
-- **includeCharCard:** Include character personality
-- **includeUserCard:** Include user personality
-- **includeWorldCard:** Include world/setting info
-- **includeHistory:** Include previous sidecar outputs
-- **historyDepth:** Number of previous outputs (minimum 1)
+**Context Settings:**
+- messagesCount: How many recent messages (1-50)
+- includeCharCard: Include character info
+- includeUserCard: Include user info
+- includeWorldCard: Include world/setting info
+- includeHistory: Include previous sidecar outputs
+- historyDepth: How many previous outputs (minimum 1)
 
-## Use Case Examples
+## Common Use Cases
 
-### Content Creators
-- Reader comment sections → `commentary-section.json`
-- Relationship tracking → `relationship-matrix.json`
-- Behind-the-scenes → `actor-interview.json`
+**Reader comments:** Import `commentary-section.json`
 
-### Writers
-- Narrative analysis → `directors-commentary.json`
-- Perspective shifts → `perspective-flip.json`
-- Craft feedback → Use AI Maker to create critique tools
+**Relationship tracking:** Import `relationship-matrix.json`
 
-### Roleplayers
-- Emotion tracking → Use AI Maker
-- Stats and metrics → `relationship-matrix.json`
-- Visual enhancements → `art-prompt-generator.json`
+**Meta commentary:** Import `directors-commentary.json` or `actor-interview.json`
 
-### Experimenters
-- Custom workflows → AI Maker + manual editing
-- Multi-model setups → Batch processing
-- Integration experiments → Custom formats + webhooks
+**Music suggestions:** Import `soundtrack-suggester.json`
 
 ## Troubleshooting
 
-Common issues and solutions:
+**Extension not loading?** Check [installation troubleshooting](../README.md#troubleshooting)
 
-**Extension not loading?**
-→ [Installation Troubleshooting](../README.md#verify-installation)
+**Sidecars not running?** Check [runtime troubleshooting](../README.md#troubleshooting)
 
-**Sidecars not running?**
-→ [Runtime Troubleshooting](../README.md#sidecars-not-running)
+**AI Maker not working?** Make sure you have an API connection set up
 
-**AI Maker not working?**
-→ [AI Maker Troubleshooting](../README.md#ai-template-maker-not-working)
+**Security questions?** See [SECURITY.md](../SECURITY.md)
 
-**Security concerns?**
-→ [Security Documentation](../SECURITY.md)
+## Need Help?
 
-## Community
-
-### Get Help
-- [GitHub Issues](https://github.com/skirianov/sidecar-ai/issues) - Bug reports and questions
-- [Discussions](https://github.com/skirianov/sidecar-ai/discussions) - General discussion
-
-### Contribute
-- [Contributing Guide](../README.md#-development)
-- [Submit Templates](../templates/README.md#sharing-templates)
-- [Report Bugs](https://github.com/skirianov/sidecar-ai/issues/new)
-
-### Stay Updated
-- Watch the [GitHub repo](https://github.com/skirianov/sidecar-ai) for updates
-- Check [Changelog](../CHANGELOG.md) for new features
-- Star ⭐ the repo if you find it useful!
-
-### Support Development
-- [☕ Support on Ko-fi](https://ko-fi.com/sidecarai) - Help keep this project maintained and enable new features!
-
-## Need More Help?
-
-Can't find what you're looking for?
-
-1. Check [Main README](../README.md)
-2. Search [existing issues](https://github.com/skirianov/sidecar-ai/issues)
-3. Ask in [discussions](https://github.com/skirianov/sidecar-ai/discussions)
-4. Open a [new issue](https://github.com/skirianov/sidecar-ai/issues/new)
-
----
-
-**Happy sidecaring! 🚗💨**
+- Check the [main README](../README.md)
+- Search [GitHub issues](https://github.com/skirianov/sidecar-ai/issues)
+- Open a [new issue](https://github.com/skirianov/sidecar-ai/issues/new)

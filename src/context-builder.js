@@ -206,7 +206,7 @@ export class ContextBuilder {
 
     /**
      * Get add-on history from chat log metadata
-     * Now reads from message.extra.sidecarResults instead of HTML comments
+     * Reads from message.extra.sidecarResults
      */
     getAddonHistory(chatLog, addonId, count) {
         if (!chatLog || !Array.isArray(chatLog) || !addonId) {
@@ -228,21 +228,6 @@ export class ContextBuilder {
                 }
             }
 
-            // Fallback: Try old HTML comment storage (for backward compatibility)
-            if (msg && msg.mes) {
-                const pattern = new RegExp(`<!-- sidecar-storage:${addonId}:(.+?) -->`);
-                const match = msg.mes.match(pattern);
-                if (match && match[1]) {
-                    try {
-                        const decoded = decodeURIComponent(escape(atob(match[1])));
-                        if (decoded && decoded.length > 0 && decoded.length < 100000) {
-                            history.unshift(decoded);
-                        }
-                    } catch (e) {
-                        console.warn('[Sidecar AI] Failed to decode legacy history item:', e);
-                    }
-                }
-            }
         }
 
         if (history.length === 0) {

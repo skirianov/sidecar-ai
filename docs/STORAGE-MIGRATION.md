@@ -1,90 +1,78 @@
-# 📦 Storage Migration Guide (v0.3.0)
+# Storage Migration (v0.3.0)
 
-## Important Change in v0.3.0
+## What Changed
 
-Sidecar AI now stores results in `message.extra` instead of HTML comments in `message.mes`.
+In v0.3.0, sidecar results are now stored in `message.extra` instead of HTML comments in the message text.
 
-### Why This Change?
+### Why?
 
-**Before (v0.1.x):**
+**Before:** Results were stored as HTML comments in the message text:
 ```html
-<!-- sidecar-storage:addon_12345:YGBgaHRtbAo8ZGl2IGNsYXNzPSJzaWRlY2FyLWNvbnRlbnQtY2FyZCIg... (2-5KB of base64) -->
+<!-- sidecar-storage:addon_12345:YGBgaHRtbAo... (2-5KB of base64) -->
 ```
 
-This was stored IN the message text, meaning:
-- ❌ Sent to AI as part of context (wasting tokens)
-- ❌ Could confuse the main AI
-- ❌ Massive token waste (2-5KB per result × multiple sidecars)
-- ❌ Visible in message source/HTML
+This was bad because:
+- The comments got sent to the AI as part of context (wasting tokens)
+- Could confuse the main AI
+- Massive token waste (2-5KB per result × multiple sidecars × many messages)
+- Visible in message source
 
-**After (v0.3.0):**
+**After:** Results are stored in `message.extra`:
 ```javascript
 message.extra.sidecarResults = {
   "addon_12345": {
     result: "...",
     addonName: "Reader Comments",
-    timestamp: 1234567890,
-    formatStyle: "html-css"
+    timestamp: 1234567890
   }
 }
 ```
 
-Benefits:
-- ✅ NOT sent to AI (saves massive tokens)
-- ✅ Clean separation of data vs display
-- ✅ Easier to manage programmatically
-- ✅ Follows SillyTavern's metadata conventions
-- ✅ No context pollution
+This is better because:
+- Not sent to AI (saves tokens)
+- Clean separation of data vs display
+- Easier to manage
+- Follows SillyTavern conventions
 
-### Token Savings Example
+### Token Savings
 
-**Scenario:** 3 sidecars per message, 20 messages in context
+With 3 sidecars per message and 20 messages in context:
 
-**Before:**
-- 3 sidecars × 3KB average × 20 messages = **180KB in context**
-- At ~4 chars/token = **~45,000 extra tokens per request**
-- With GPT-4: **$0.45 - $0.90 extra cost per request!**
+**Before:** ~45,000 extra tokens per request = $0.45-0.90 extra cost  
+**After:** 0 extra tokens = $0 extra cost
 
-**After:**
-- **0KB in context** (stored in metadata, not sent to AI)
-- **$0.00 extra cost**
+You save a lot of tokens and money.
 
-**Savings:** Up to ~45K tokens and $0.90 per request!
+## Migration
 
-## Automatic Migration
-
-Good news: **Migration is automatic!**
+**Good news:** Migration is automatic.
 
 When you update to v0.3.0:
-1. New results are stored in `message.extra` (clean)
-2. Old HTML comment storage still works (backward compatible)
-3. When results are updated, old comments are cleaned up automatically
+- New results go to `message.extra`
+- Old HTML comments still work (backward compatible)
+- Old comments get cleaned up when results are updated
 
-### What Happens
+### How It Works
 
-**Reading Results:**
-- Extension checks `message.extra` first (modern)
-- Falls back to HTML comments (legacy)
+**Reading results:**
+- Checks `message.extra` first
+- Falls back to HTML comments if needed
 - Both work seamlessly
 
-**Saving New Results:**
-- Stores in `message.extra` only (clean)
-- Removes old HTML comments if found (cleanup)
+**Saving new results:**
+- Stores in `message.extra` only
+- Removes old HTML comments if found
 
-**Updating Existing Results:**
+**Updating existing results:**
 - Stores in `message.extra`
 - Cleans up old HTML comments
-- Gradual migration as you interact with sidecars
+- Gradual migration as you use sidecars
 
 ### Manual Cleanup (Optional)
 
-If you want to clean up old HTML comments immediately:
-
-1. Open browser console (F12)
-2. Run this cleanup script:
+If you want to clean up old HTML comments right away, open browser console (F12) and run:
 
 ```javascript
-// Clean up old sidecar storage comments
 const chatLog = SillyTavern.getContext().chat;
 let cleaned = 0;
 
@@ -94,10 +82,7 @@ chatLog.forEach(msg => {
     msg.mes = msg.mes.replace(/\n?<!-- sidecar-storage:[^>]+ -->/g, '');
     msg.mes = msg.mes.replace(/\n?<!-- sidecar-edited:[^>]+ -->/g, '');
     msg.mes = msg.mes.replace(/\n?<!-- sidecar-fallback:[^>]+ -->/g, '');
-    const after = msg.mes.length;
-    if (before !== after) {
-      cleaned++;
-    }
+    if (before !== msg.mes.length) cleaned++;
   }
 });
 
@@ -105,69 +90,54 @@ console.log(`Cleaned ${cleaned} messages`);
 SillyTavern.getContext().saveChat();
 ```
 
-This removes old storage comments but keeps results in `message.extra`.
+### Verify It's Working
 
-### Verify Migration
-
-Check if migration is working:
+Check a recent message:
 
 ```javascript
-// Check a recent message
 const lastMsg = SillyTavern.getContext().chat.slice(-1)[0];
-console.log('message.extra.sidecarResults:', lastMsg.extra?.sidecarResults);
-console.log('Has old HTML comments:', lastMsg.mes?.includes('sidecar-storage:'));
+console.log('Results in message.extra:', lastMsg.extra?.sidecarResults);
+console.log('Has old comments:', lastMsg.mes?.includes('sidecar-storage:'));
 ```
 
-**Expected:**
-- `sidecarResults` shows your results (good!)
-- `Has old HTML comments: false` (clean!)
+Should show results in `message.extra` and no old comments.
 
 ## Impact on Existing Chats
 
-### No Data Loss
+**No data loss:**
+- All existing results are preserved
+- History viewer still works
+- Edit functionality still works
+- No re-processing needed
 
-- ✅ All existing results are preserved
-- ✅ History viewer still works
-- ✅ Edit functionality still works
-- ✅ No re-processing needed
+**Gradual migration:**
+- Old data migrates as you edit/update results
+- No rush, happens automatically
 
-### Gradual Migration
-
-Old data migrates as you:
-- Edit existing results
-- Generate new results
-- Update sidecar configurations
-
-### Chat Export/Import
-
-**When exporting chats:**
-- Both `message.extra` and old HTML comments are included
+**Export/Import:**
+- Both formats are included in exports
 - Full backward compatibility
-
-**When importing chats:**
-- Old format still works
-- New format preferred
 - Mixed formats handled gracefully
 
-## For Developers/Extension Creators
+## For Developers
 
 If you're accessing sidecar results programmatically:
 
-### Old Way (Deprecated)
+**Old way (deprecated):**
 ```javascript
 const pattern = /<!-- sidecar-storage:addon_id:(.+?) -->/;
 const match = message.mes.match(pattern);
 const decoded = atob(match[1]);
 ```
 
-### New Way (Recommended)
+**New way:**
 ```javascript
 const result = message.extra?.sidecarResults?.['addon_id']?.result;
 ```
 
-Much cleaner!
+Much cleaner.
 
-### Backward Compatible Code
+**Backward compatible code:**
 ```javascript
 function getSidecarResult(message, addonId) {
   // Try modern storage
@@ -190,35 +160,15 @@ function getSidecarResult(message, addonId) {
 
 **Results not showing after update?**
 - They're still there, just stored differently
-- Refresh the page to reload with new code
+- Refresh the page
 - Check console for migration messages
 
-**Old HTML comments still visible in message source?**
+**Old HTML comments still visible?**
 - Normal for existing results that haven't been updated yet
-- They'll be cleaned up when results are edited or regenerated
+- They'll be cleaned up when results are edited/regenerated
 - Run manual cleanup script if you want immediate cleanup
 
 **Context still seems bloated?**
-- Check if you have other extensions adding HTML comments
+- Check if other extensions are adding HTML comments
 - Verify you're on v0.3.0 (check manifest.json)
 - Look for `[Sidecar AI] Saved result in message.extra` in console
-
-## Benefits Summary
-
-### For Users
-- 💰 **Massive token savings** (up to 45K tokens per request)
-- 🚀 **Faster responses** (less context to process)
-- 💵 **Lower costs** (fewer tokens = less money)
-- 🧹 **Cleaner chat exports**
-
-### For Developers
-- 📦 **Cleaner API** (proper metadata field)
-- 🔧 **Easier debugging** (structured data, not base64)
-- 🛠️ **Better integration** (follows ST conventions)
-- 📊 **Programmatic access** (simple object property vs regex parsing)
-
----
-
-**Questions?** Open an issue: https://github.com/skirianov/sidecar-ai/issues
-
-**Want to contribute?** Suggest improvements to the storage system!

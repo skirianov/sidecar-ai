@@ -295,6 +295,20 @@ export class SettingsUI {
             self.addGeneratedTemplate();
         });
 
+        // AI Maker test button
+        $(document).off('click.sidecar', '#ai_maker_test').on('click.sidecar', '#ai_maker_test', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.testTemplate();
+        });
+
+        // AI Maker publish button
+        $(document).off('click.sidecar', '#ai_maker_publish').on('click.sidecar', '#ai_maker_publish', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.publishTemplate();
+        });
+
         // Prevent select dropdowns from being interfered with
         $(document).off('click.sidecar', '.add_ons_modal select').on('click.sidecar', '.add_ons_modal select', function (e) {
             e.stopPropagation();
@@ -2224,6 +2238,9 @@ export class SettingsUI {
         $('#ai_maker_result').hide();
         $('#ai_maker_export').hide();
         $('#ai_maker_add').hide();
+        $('#ai_maker_test').hide();
+        $('#ai_maker_publish').hide();
+        $('#ai_maker_test_result').hide();
         $('#ai_maker_generate').show();
         this.generatedTemplate = null;
     }
@@ -2315,7 +2332,9 @@ export class SettingsUI {
 
         try {
             // Build prompt for template generation
-            const prompt = `You are a Sidecar AI template generator. The user will describe a sidecar they want to create, and you will generate a complete JSON configuration.
+            const prompt = `You are a Sidecar AI template generator. Sidecar AI analyzes chat conversations and story content - it does NOT ask users questions or request input.
+
+CRITICAL: The "prompt" field must instruct the AI to ANALYZE the conversation/story content, NOT ask the user to describe things.
 
 USER'S DESCRIPTION:
 ${description}
@@ -2325,7 +2344,7 @@ Generate a complete sidecar configuration following this exact structure (return
 {
   "name": "[Emoji] [Descriptive Name]",
   "description": "[Brief description of what this sidecar does]",
-  "prompt": "[The actual instruction prompt for the AI - be specific and include example output format]",
+  "prompt": "[CRITICAL: Instruction for AI to analyze chat/story content - include example output format]",
   "triggerMode": "manual" or "auto",
   "requestMode": "standalone",
   "aiProvider": "openai",
@@ -2344,15 +2363,46 @@ Generate a complete sidecar configuration following this exact structure (return
   }
 }
 
-GUIDELINES:
+PROMPT WRITING RULES:
+- ✅ GOOD: "Analyze the conversation and describe what clothing the character is wearing. Format as: '[Character] is wearing [description]'"
+- ✅ GOOD: "Review the recent messages and track character emotions. Output: Character feels [emotion] because [reason]"
+- ❌ BAD: "Please describe a piece of clothing you own" (asks user, doesn't analyze)
+- ❌ BAD: "Tell me about your feelings" (asks user, doesn't analyze)
+- The prompt should analyze EXISTING chat content, not request NEW information from users
+- Include example output format in the prompt
+- Use imperative verbs: "Analyze", "Track", "Identify", "Summarize", "Extract"
+
+EXAMPLE TEMPLATE (for reference):
+{
+  "name": "🎬 Director's Commentary",
+  "description": "Provides meta-analysis like DVD commentary",
+  "prompt": "Provide director's commentary on the last message (as if analyzing a film scene):\n\n🎬 **Scene Analysis:**\n[What's happening on a meta level - narrative techniques, character beats, foreshadowing]\n\n**Notable Techniques:**\n- [Technique 1]: [How it's used]\n- [Technique 2]: [How it's used]\n\nKeep it insightful but concise. Focus on craft, not just plot summary.",
+  "triggerMode": "manual",
+  "requestMode": "standalone",
+  "aiProvider": "openai",
+  "aiModel": "gpt-4o-mini",
+  "apiKey": "",
+  "resultFormat": "collapsible",
+  "responseLocation": "outsideChatlog",
+  "formatStyle": "html-css",
+  "contextSettings": {
+    "messagesCount": 5,
+    "includeCharCard": true,
+    "includeUserCard": false,
+    "includeWorldCard": false,
+    "includeHistory": true,
+    "historyDepth": 1
+  }
+}
+
+OTHER GUIDELINES:
 - Choose appropriate emoji for the sidecar name
-- Write clear, specific prompts with example output formatting
-- Set triggerMode "auto" for continuous tracking, "manual" for on-demand
+- Set triggerMode "auto" for continuous tracking/analysis, "manual" for on-demand analysis
 - Choose formatStyle: "html-css" for styled output, "markdown" for simple text, "beautify" for creative
-- Set messagesCount based on context needs (2-5 for immediate, 10-20 for broader)
-- includeCharCard if character personality matters
-- includeUserCard if user personality matters
-- includeWorldCard if setting/world context matters
+- Set messagesCount: 2-5 for immediate context, 10-20 for broader analysis, 20-30 for patterns
+- includeCharCard: true if analyzing character behavior/personality
+- includeUserCard: true if analyzing user interactions/preferences
+- includeWorldCard: true if analyzing setting/world details
 - Always set includeHistory: true and historyDepth: 1 minimum
 
 Return ONLY the JSON object, properly formatted.`;
@@ -2500,6 +2550,8 @@ Return ONLY the JSON object, properly formatted.`;
             $('#ai_maker_result').show();
             $('#ai_maker_export').show();
             $('#ai_maker_add').show();
+            $('#ai_maker_test').show();
+            $('#ai_maker_publish').show();
             $('#ai_maker_generate').html(originalText).prop('disabled', false);
 
             console.log('[Sidecar AI] Generated template:', generatedConfig);
@@ -2579,6 +2631,225 @@ Return ONLY the JSON object, properly formatted.`;
         } catch (error) {
             console.error('[Sidecar AI] Error adding template:', error);
             alert('Error adding template: ' + error.message);
+        }
+    }
+
+    /**
+     * Test generated template with a premade roleplay scenario
+     */
+    async testTemplate() {
+        if (!this.generatedTemplate) {
+            alert('No template generated yet.');
+            return;
+        }
+
+        const testBtn = $('#ai_maker_test');
+        const originalText = testBtn.html();
+        testBtn.html('<i class="fa-solid fa-spinner fa-spin"></i> Testing...').prop('disabled', true);
+        $('#ai_maker_test_result').hide();
+
+        try {
+            // Create a mock test scenario
+            const testScenario = {
+                messages: [
+                    {
+                        role: 'user',
+                        content: 'You walk into a cozy coffee shop on a rainy afternoon. The bell above the door chimes as you enter, and you see a familiar face at a corner table.'
+                    },
+                    {
+                        role: 'assistant',
+                        content: '*I look up from my book, a warm smile spreading across my face as I recognize you. I set the book down and gesture to the empty chair across from me.*\n\n"Well, well, look who decided to brave the weather. Come, sit. I was just thinking about you."\n\n*The aroma of freshly brewed coffee fills the air, and soft jazz plays in the background. Raindrops trace patterns on the window beside us.*'
+                    },
+                    {
+                        role: 'user',
+                        content: 'I slide into the chair, shaking off my wet coat. "You always know the best spots. What are you reading?"'
+                    },
+                    {
+                        role: 'assistant',
+                        content: '*I pick up the book, showing you the cover - a worn copy of "The Night Circus"*\n\n"Just re-reading an old favorite. There\'s something about magical realism that feels perfect for days like this, don\'t you think?"\n\n*I lean forward slightly, my eyes sparkling with curiosity*\n\n"But enough about books. Tell me - what brings you here today? You seem... contemplative."'
+                    }
+                ],
+                character: {
+                    name: 'Alex',
+                    description: 'A thoughtful, warm-hearted person who loves books, coffee, and deep conversations. They have a gentle sense of humor and are always genuinely interested in others.'
+                }
+            };
+
+            // Get connection profile
+            const connectionId = $('#ai_maker_connection').val();
+            const profiles = this.context?.extensionSettings?.connectionManager?.profiles || [];
+            const profile = profiles.find(p => (p.id || p.name) === connectionId);
+
+            if (!profile) {
+                throw new Error('Connection profile not found');
+            }
+
+            const provider = profile.api || 'openai';
+            let model = profile.model || profile.defaultModel || this.generatedTemplate.aiModel || 'gpt-4o-mini';
+            const presetName = $('#ai_maker_preset').val() || undefined;
+
+            // Map provider to chat_completion_source
+            const getChatCompletionSource = (provider) => {
+                const sourceMap = {
+                    'openai': 'openai',
+                    'openrouter': 'openrouter',
+                    'anthropic': 'anthropic',
+                    'google': 'makersuite',
+                    'deepseek': 'deepseek',
+                    'cohere': 'cohere',
+                    'custom': 'custom',
+                };
+                return sourceMap[provider?.toLowerCase()] || 'openai';
+            };
+
+            const chatCompletionSource = getChatCompletionSource(provider);
+
+            // Build context for the test
+            const contextMessages = testScenario.messages.map(msg => ({
+                role: msg.role,
+                content: msg.content
+            }));
+
+            // Build the prompt with context
+            const contextText = contextMessages.map(m => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n\n');
+            const charInfo = testScenario.character ? `\n\nCharacter: ${testScenario.character.name}\n${testScenario.character.description}` : '';
+            const fullPrompt = `${this.generatedTemplate.prompt}\n\n--- Context ---\n${contextText}${charInfo}`;
+
+            // Add system message
+            const messages = [
+                {
+                    role: 'system',
+                    content: 'You are a task executor. Your ONLY job is to follow the instruction block provided by the user. DO NOT continue stories, generate dialogue, or roleplay. ONLY execute the specific task requested in the instruction block.'
+                },
+                {
+                    role: 'user',
+                    content: fullPrompt
+                }
+            ];
+
+            console.log('[Sidecar AI] Testing template with scenario:', { provider, model, chatCompletionSource });
+
+            // Make the AI request
+            const response = await this.context.ChatCompletionService.processRequest({
+                stream: false,
+                messages: messages,
+                model: model,
+                chat_completion_source: chatCompletionSource,
+                max_tokens: 2048,
+                temperature: 0.7
+            }, {
+                presetName: presetName
+            }, true);
+
+            const content = response?.content || response?.choices?.[0]?.message?.content || String(response);
+
+            // Format the result using the template's formatStyle
+            const formatted = this.formatTestResult(this.generatedTemplate, content);
+
+            // Display the result
+            $('#ai_maker_test_preview').html(formatted);
+            $('#ai_maker_test_result').show();
+
+            // Scroll to result
+            $('#ai_maker_test_result')[0].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            testBtn.html(originalText).prop('disabled', false);
+            console.log('[Sidecar AI] Template test completed');
+        } catch (error) {
+            console.error('[Sidecar AI] Template test error:', error);
+            alert('Error testing template: ' + error.message + '\n\nCheck console for details.');
+            testBtn.html(originalText).prop('disabled', false);
+        }
+    }
+
+    /**
+     * Format test result based on template's formatStyle
+     */
+    formatTestResult(template, content) {
+        // Basic sanitization
+        let sanitized = content
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<iframe[^>]*>[\s\S]*?<\/iframe>/gi, '')
+            .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '');
+
+        if (template.formatStyle === 'html-css') {
+            return sanitized;
+        } else if (template.formatStyle === 'markdown') {
+            // SillyTavern will render markdown
+            return sanitized;
+        } else {
+            return sanitized;
+        }
+    }
+
+    /**
+     * Publish template to GitHub as a PR
+     */
+    async publishTemplate() {
+        if (!this.generatedTemplate) {
+            alert('No template generated yet.');
+            return;
+        }
+
+        const templateName = this.generatedTemplate.name.replace(/[^a-z0-9]/gi, '-').toLowerCase();
+        const fileName = `${templateName}.json`;
+
+        // Confirm
+        if (!confirm(`Publish "${this.generatedTemplate.name}" to GitHub?\n\nThis will open GitHub to create a Pull Request adding the template to templates/community/${fileName}`)) {
+            return;
+        }
+
+        const publishBtn = $('#ai_maker_publish');
+        const originalText = publishBtn.html();
+        publishBtn.html('<i class="fa-solid fa-spinner fa-spin"></i> Publishing...').prop('disabled', true);
+
+        try {
+            // Wrap in export format
+            const exportData = {
+                version: '1.0',
+                name: `Template: ${this.generatedTemplate.name}`,
+                description: this.generatedTemplate.description,
+                addons: [this.generatedTemplate]
+            };
+
+            const json = JSON.stringify(exportData, null, 2);
+
+            // Copy to clipboard
+            await navigator.clipboard.writeText(json).catch(() => {
+                // Fallback if clipboard API fails
+                const textarea = document.createElement('textarea');
+                textarea.value = json;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+            });
+
+            const repo = 'skirianov/sidecar-ai';
+            const filePath = `templates/community/${fileName}`;
+            const commitMessage = encodeURIComponent(`Add template: ${this.generatedTemplate.name}`);
+            const prTitle = encodeURIComponent(`Add template: ${this.generatedTemplate.name}`);
+            const prBody = encodeURIComponent(`## Template: ${this.generatedTemplate.name}\n\n${this.generatedTemplate.description}\n\n### Generated by AI Template Maker\n\nThis template was generated using the AI Template Maker feature.`);
+
+            // Open GitHub's web editor with file pre-filled
+            // Note: GitHub's web editor URL format
+            const githubUrl = `https://github.com/${repo}/new/main?filename=${filePath}&value=${encodeURIComponent(json)}&message=${commitMessage}`;
+
+            // Open in new tab
+            window.open(githubUrl, '_blank');
+
+            // Show instructions
+            setTimeout(() => {
+                alert(`✅ Template JSON copied to clipboard!\n\n📋 GitHub web editor opened in new tab.\n\n📝 Instructions:\n1. Review the file content in GitHub\n2. Click "Commit new file"\n3. Click "Create pull request"\n4. Fill in PR title: "${this.generatedTemplate.name}"\n5. Add description if needed\n6. Submit PR\n\n💡 Tip: The JSON is already in your clipboard if you need to paste it elsewhere.`);
+            }, 500);
+
+            publishBtn.html(originalText).prop('disabled', false);
+        } catch (error) {
+            console.error('[Sidecar AI] Publish error:', error);
+            alert('Error preparing template for GitHub: ' + error.message + '\n\nYou can export the template and create a PR manually.');
+            publishBtn.html(originalText).prop('disabled', false);
         }
     }
 }

@@ -676,25 +676,10 @@ export class ResultFormatter {
         // Get message object
         const message = this.findMessageObject(messageId);
 
-        if (message) {
-            // Try modern storage first (message.extra)
-            if (message.extra?.sidecarResults?.[addon.id]) {
-                currentContent = message.extra.sidecarResults[addon.id].result;
-            }
-            // Fallback to old HTML comment storage
-            else if (message.mes) {
-                const pattern = new RegExp(`<!-- sidecar-storage:${addon.id}:(.+?) -->`);
-                const match = message.mes.match(pattern);
-                if (match && match[1]) {
-                    try {
-                        currentContent = decodeURIComponent(escape(atob(match[1])));
-                    } catch (e) { console.warn('Decode legacy storage failed', e); }
-                }
-            }
-        }
-
-        // Last resort fallback to displayed text
-        if (!currentContent) {
+        if (message?.extra?.sidecarResults?.[addon.id]) {
+            currentContent = message.extra.sidecarResults[addon.id].result;
+        } else {
+            // Fallback to displayed text if metadata not found
             currentContent = resultItem.innerText;
         }
 
@@ -828,14 +813,6 @@ export class ResultFormatter {
             };
 
             console.log(`[Sidecar AI] Saved result in message.extra for ${addon.name} (${result.length} chars)`);
-
-            // Also remove old HTML comment storage if it exists (migration cleanup)
-            if (message.mes && message.mes.includes(`sidecar-storage:${addon.id}:`)) {
-                const pattern = new RegExp(`\\n?<!-- sidecar-storage:${addon.id}:[^>]+ -->`, 'g');
-                message.mes = message.mes.replace(pattern, '');
-                console.log(`[Sidecar AI] Cleaned up old HTML comment storage for ${addon.name}`);
-            }
-
             return true;
         } catch (error) {
             console.error(`[Sidecar AI] Error saving result metadata:`, error);
@@ -852,7 +829,7 @@ export class ResultFormatter {
 
     /**
      * Get all results for a specific add-on from chat history
-     * Reads from message.extra.sidecarResults (with fallback to old HTML comments)
+     * Reads from message.extra.sidecarResults
      */
     getAllResultsForAddon(addonId) {
         const results = [];
@@ -864,7 +841,6 @@ export class ResultFormatter {
 
         // Iterate through chat log to find saved results
         chatLog.forEach((msg, index) => {
-            // Try modern storage first (message.extra)
             if (msg?.extra?.sidecarResults?.[addonId]) {
                 const stored = msg.extra.sidecarResults[addonId];
                 results.push({
@@ -876,34 +852,6 @@ export class ResultFormatter {
                     edited: stored.edited || false,
                     addonId: addonId
                 });
-                return; // Skip HTML comment check
-            }
-
-            // Fallback: Try old HTML comment storage (backward compatibility)
-            if (msg && msg.mes) {
-                const pattern = new RegExp(`<!-- sidecar-storage:${addonId}:(.+?) -->`);
-                const match = msg.mes.match(pattern);
-
-                if (match && match[1]) {
-                    try {
-                        const decoded = decodeURIComponent(escape(atob(match[1])));
-                        const isEdited = msg.mes.includes(`<!-- sidecar-edited:${addonId} -->`);
-
-                        if (decoded && decoded.length > 0 && decoded.length < 100000) {
-                            results.push({
-                                content: decoded,
-                                timestamp: msg.send_date || Date.now(),
-                                messageId: this.getMessageId(msg),
-                                messageIndex: index,
-                                messagePreview: (msg.mes || '').substring(0, 50).replace(/<[^>]+>/g, '') + '...',
-                                edited: isEdited,
-                                addonId: addonId
-                            });
-                        }
-                    } catch (e) {
-                        console.warn(`[Sidecar AI] Failed to decode legacy result:`, e);
-                    }
-                }
             }
         });
 
@@ -912,72 +860,31 @@ export class ResultFormatter {
     }
 
     /**
-     * Delete result from metadata (message.extra and legacy HTML comments)
+     * Delete result from metadata (message.extra)
      */
     deleteResultFromMetadata(message, addonId) {
         if (!message || !addonId) {
             return false;
         }
 
-        let modified = false;
-
-        // Remove from message.extra (modern storage)
         if (message.extra?.sidecarResults?.[addonId]) {
             delete message.extra.sidecarResults[addonId];
-            modified = true;
             console.log(`[Sidecar AI] Deleted result from message.extra`);
-        }
 
-        // Remove legacy HTML comment storage
-        if (message.mes) {
-            // Remove storage tag
-            const storagePattern = new RegExp(`\\n?<!-- sidecar-storage:${addonId}:.+? -->`, 'g');
-            if (message.mes.match(storagePattern)) {
-                message.mes = message.mes.replace(storagePattern, '');
-                modified = true;
-            }
-
-            // Remove result comment (for chatHistory mode)
-            const resultPattern = new RegExp(`<!-- addon-result:${addonId} -->[\\s\\S]*?<!-- /addon-result:${addonId} -->`, 'g');
-            if (message.mes.match(resultPattern)) {
-                message.mes = message.mes.replace(resultPattern, '');
-                modified = true;
-            }
-
-            // Remove edited tag if present
-            const editedPattern = new RegExp(`\\n?<!-- sidecar-edited:${addonId} -->`, 'g');
-            if (message.mes.match(editedPattern)) {
-                message.mes = message.mes.replace(editedPattern, '');
-                modified = true;
-            }
-        }
-
-        // If we modified the message, we should also update the DOM if possible
-        if (modified) {
+            // Update DOM if possible
             const messageId = this.getMessageId(message);
-
-            // Remove from dropdown if present
             const messageElement = this.findMessageElement(messageId);
             if (messageElement) {
-                const section = messageElement.querySelector(`.addon-section-${addonId}`);
+                const section = messageElement.querySelector(`.addon_section-${addonId}`);
                 if (section) {
                     section.remove();
                 }
-
-                // For chatHistory, we might need to refresh the message content in DOM
-                // But usually SillyTavern handles this when we save/reload chat
-                // For immediate feedback, we can try to update the DOM content
-                const contentArea = messageElement.querySelector('.mes_text') ||
-                    messageElement.querySelector('.message') ||
-                    messageElement;
-
-                if (contentArea && contentArea.innerHTML) {
-                    contentArea.innerHTML = contentArea.innerHTML.replace(resultPattern, '');
-                }
             }
+
+            return true;
         }
 
-        return modified;
+        return false;
     }
 
     /**
@@ -1007,17 +914,6 @@ export class ResultFormatter {
             };
 
             console.log(`[Sidecar AI] Updated result in message.extra for addon ${addonId}`);
-
-            // Also clean up old HTML comment storage if present
-            if (message.mes && message.mes.includes(`sidecar-storage:${addonId}:`)) {
-                const storagePattern = new RegExp(`\\n?<!-- sidecar-storage:${addonId}:.+? -->`, 'g');
-                message.mes = message.mes.replace(storagePattern, '');
-
-                const editedPattern = new RegExp(`\\n?<!-- sidecar-edited:${addonId} -->`, 'g');
-                message.mes = message.mes.replace(editedPattern, '');
-
-                console.log(`[Sidecar AI] Cleaned up legacy HTML comment storage`);
-            }
         } catch (e) {
             console.error('[Sidecar AI] Error updating metadata:', e);
             return false;
@@ -1180,57 +1076,55 @@ export class ResultFormatter {
                         continue; // Skip disabled add-ons
                     }
 
-                    // Look for storage tag for this add-on
-                    const pattern = new RegExp(`<!-- sidecar-storage:${addon.id}:(.+?) -->`);
-                    const match = message.mes.match(pattern);
+                    // Get result from message.extra.sidecarResults
+                    if (!message.extra?.sidecarResults?.[addon.id]) {
+                        continue;
+                    }
 
-                    if (match && match[1]) {
+                    const stored = message.extra.sidecarResults[addon.id];
+                    const result = stored.result;
+
+                    if (result && result.length > 0 && result.length < 100000) {
                         try {
-                            // Decode the stored result
-                            const decoded = decodeURIComponent(escape(atob(match[1])));
+                            // Restore the block based on response location
+                            if (addon.responseLocation === 'chatHistory') {
+                                // For chatHistory, check if result is already in the message content
+                                const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
+                                if (messageElement) {
+                                    const contentArea = messageElement.querySelector('.mes_text') ||
+                                        messageElement.querySelector('.message') ||
+                                        messageElement;
 
-                            if (decoded && decoded.length > 0 && decoded.length < 100000) {
-                                // Restore the block based on response location
-                                if (addon.responseLocation === 'chatHistory') {
-                                    // For chatHistory, check if result is already in the message content
-                                    // The result might be embedded directly or as a comment
-                                    const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
-                                    if (messageElement) {
-                                        const contentArea = messageElement.querySelector('.mes_text') ||
-                                            messageElement.querySelector('.message') ||
-                                            messageElement;
+                                    if (contentArea) {
+                                        // Check if result is already displayed
+                                        const resultTag = `<!-- addon-result:${addon.id} -->`;
+                                        const hasResult = contentArea.innerHTML &&
+                                            (contentArea.innerHTML.includes(resultTag) ||
+                                                contentArea.innerHTML.includes(result.substring(0, 50)));
 
-                                        if (contentArea) {
-                                            // Check if result is already displayed
-                                            const resultTag = `<!-- addon-result:${addon.id} -->`;
-                                            const hasResult = contentArea.innerHTML &&
-                                                (contentArea.innerHTML.includes(resultTag) ||
-                                                    contentArea.innerHTML.includes(decoded.substring(0, 50)));
-
-                                            if (!hasResult) {
-                                                // Restore the formatted result
-                                                const formatted = this.formatResult(addon, decoded, message, false);
-                                                this.injectIntoChatHistory(messageId, addon, formatted);
-                                                restoredCount++;
-                                                console.log(`[Sidecar AI] Restored chatHistory block for ${addon.name} in message ${messageId}`);
-                                            }
+                                        if (!hasResult) {
+                                            // Restore the formatted result
+                                            const formatted = this.formatResult(addon, result, message, false);
+                                            this.injectIntoChatHistory(messageId, addon, formatted);
+                                            restoredCount++;
+                                            console.log(`[Sidecar AI] Restored chatHistory block for ${addon.name} in message ${messageId}`);
                                         }
                                     }
-                                } else {
-                                    // For outsideChatlog, restore dropdown UI
-                                    const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
-                                    if (messageElement) {
-                                        // Check if block already exists
-                                        const existingBlock = messageElement.querySelector(`.addon-section-${addon.id}`);
-                                        if (!existingBlock) {
-                                            // Restore the dropdown block
-                                            const formatted = this.formatResult(addon, decoded, message, true);
-                                            // Pass the found messageElement to avoid re-lookup failure
-                                            const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
-                                            if (success) {
-                                                restoredCount++;
-                                                console.log(`[Sidecar AI] Restored dropdown block for ${addon.name} in message ${messageId}`);
-                                            }
+                                }
+                            } else {
+                                // For outsideChatlog, restore dropdown UI
+                                const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
+                                if (messageElement) {
+                                    // Check if block already exists
+                                    const existingBlock = messageElement.querySelector(`.addon_section-${addon.id}`);
+                                    if (!existingBlock) {
+                                        // Restore the dropdown block
+                                        const formatted = this.formatResult(addon, result, message, true);
+                                        // Pass the found messageElement to avoid re-lookup failure
+                                        const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
+                                        if (success) {
+                                            restoredCount++;
+                                            console.log(`[Sidecar AI] Restored dropdown block for ${addon.name} in message ${messageId}`);
                                         }
                                     }
                                 }
