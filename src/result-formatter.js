@@ -1363,6 +1363,54 @@ export class ResultFormatter {
     }
 
     /**
+     * Hide sidecar cards for a specific message
+     * Used when swiping between response variants - hides sidecars since they belong to a different variant
+     * @param {string|number} messageId - The message ID or index to hide sidecars for
+     */
+    hideSidecarCardsForMessage(messageId) {
+        try {
+            // If messageId is a number (index), get the actual message from chat log
+            let targetMessageId = messageId;
+            if (typeof messageId === 'number') {
+                const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+                if (messageId >= 0 && messageId < chatLog.length) {
+                    const message = chatLog[messageId];
+                    targetMessageId = this.getMessageId(message);
+                } else {
+                    console.warn(`[Sidecar AI] Invalid message index: ${messageId}`);
+                    return 0;
+                }
+            }
+
+            // Find the message element
+            const messageElement = this.findMessageElement(targetMessageId);
+            if (!messageElement) {
+                console.warn(`[Sidecar AI] Message element not found for ID: ${targetMessageId}`);
+                return 0;
+            }
+
+            // Find all sidecar containers for this message and hide them
+            const containers = messageElement.querySelectorAll('.sidecar-container');
+            let hiddenCount = 0;
+            containers.forEach(container => {
+                if (container.style.display !== 'none') {
+                    container.style.display = 'none';
+                    hiddenCount++;
+                }
+            });
+
+            if (hiddenCount > 0) {
+                console.log(`[Sidecar AI] Hid ${hiddenCount} sidecar container(s) for message ${targetMessageId} due to swipe`);
+            }
+
+            return hiddenCount;
+        } catch (error) {
+            console.error('[Sidecar AI] Error hiding sidecar cards for message:', error);
+            return 0;
+        }
+    }
+
+    /**
      * Show sidecar cards for a specific message
      * Used when swiping to a message - shows only that message's sidecars
      * @param {string|number} messageId - The message ID or index to show sidecars for
