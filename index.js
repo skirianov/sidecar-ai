@@ -258,45 +258,82 @@ async function loadModules() {
             // Create menu item matching SillyTavern's format
             const menuItem = document.createElement('div');
             menuItem.className = 'list-group-item flex-container flexGap5';
-            menuItem.style.cursor = 'pointer';
+            menuItem.style.cursor = 'default';
             menuItem.title = 'Run manual sidecar prompts';
 
+            // Create inner structure
             menuItem.innerHTML = `
                 <div class="extensionsMenuExtensionButton fa-solid fa-bolt"></div>
-                Run Sidecar
+                <div style="flex-grow: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Run Sidecar</div>
+                <select id="sidecar_manual_select" class="text_pole" style="max-width: 120px; margin-right: 5px; padding: 2px; height: 28px;" title="Select Sidecar to run">
+                    <option value="all">All Manual</option>
+                </select>
+                <div id="sidecar_run_btn" class="menu_button" style="padding: 2px 8px; height: 28px; min-width: 28px; display: flex; align-items: center; justify-content: center;" title="Run Selected">
+                    <i class="fa-solid fa-play"></i>
+                </div>
             `;
 
-            menuItem.addEventListener('click', async () => {
+            const select = menuItem.querySelector('#sidecar_manual_select');
+            const runBtn = menuItem.querySelector('#sidecar_run_btn');
+
+            // Function to update the select options
+            const updateSelectOptions = () => {
+                const manualAddons = eventHandler.addonManager.getEnabledAddons()
+                    .filter(addon => addon.triggerMode === 'manual');
+                
+                const currentValue = select.value;
+                select.innerHTML = '<option value="all">All Manual</option>';
+                
+                manualAddons.forEach(addon => {
+                    const option = document.createElement('option');
+                    option.value = addon.id;
+                    option.textContent = addon.name;
+                    select.appendChild(option);
+                });
+
+                // Restore selection if still valid
+                if (manualAddons.find(a => a.id === currentValue) || currentValue === 'all') {
+                    select.value = currentValue;
+                }
+            };
+
+            // Update options on interaction
+            select.addEventListener('mousedown', updateSelectOptions);
+            // Also update initially
+            updateSelectOptions();
+
+            // Prevent clicks on controls from bubbling up if container had listeners (it doesn't anymore, but good practice)
+            select.addEventListener('click', (e) => e.stopPropagation());
+
+            // Run button handler
+            runBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                
                 // Disable during processing
-                const originalHTML = menuItem.innerHTML;
-                menuItem.style.opacity = '0.5';
-                menuItem.style.pointerEvents = 'none';
-                menuItem.innerHTML = `
-                    <div class="extensionsMenuExtensionButton fa-solid fa-spinner fa-spin"></div>
-                    Processing...
-                `;
+                const originalHTML = runBtn.innerHTML;
+                runBtn.style.opacity = '0.5';
+                runBtn.style.pointerEvents = 'none';
+                runBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
 
                 try {
-                    await eventHandler.triggerAddons();
-                    menuItem.innerHTML = `
-                        <div class="extensionsMenuExtensionButton fa-solid fa-check"></div>
-                        Done!
-                    `;
+                    const selectedId = select.value;
+                    const addonIds = selectedId === 'all' ? null : [selectedId];
+                    
+                    await eventHandler.triggerAddons(addonIds);
+                    
+                    runBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
                     setTimeout(() => {
-                        menuItem.innerHTML = originalHTML;
-                        menuItem.style.opacity = '1';
-                        menuItem.style.pointerEvents = 'auto';
+                        runBtn.innerHTML = originalHTML;
+                        runBtn.style.opacity = '1';
+                        runBtn.style.pointerEvents = 'auto';
                     }, 2000);
                 } catch (error) {
                     console.error('[Sidecar AI] Error triggering add-ons:', error);
-                    menuItem.innerHTML = `
-                        <div class="extensionsMenuExtensionButton fa-solid fa-exclamation-triangle"></div>
-                        Error
-                    `;
+                    runBtn.innerHTML = '<i class="fa-solid fa-exclamation-triangle"></i>';
                     setTimeout(() => {
-                        menuItem.innerHTML = originalHTML;
-                        menuItem.style.opacity = '1';
-                        menuItem.style.pointerEvents = 'auto';
+                        runBtn.innerHTML = originalHTML;
+                        runBtn.style.opacity = '1';
+                        runBtn.style.pointerEvents = 'auto';
                     }, 2000);
                 }
             });
