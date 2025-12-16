@@ -603,19 +603,59 @@ export class AIClient {
      */
     getRequestHeaders() {
         // Try multiple ways to get request headers
+        let headers = null;
+        
+        // Method 1: Direct global function (most common in SillyTavern)
         if (typeof getRequestHeaders === 'function') {
-            return getRequestHeaders();
+            try {
+                headers = getRequestHeaders();
+                console.log('[Sidecar AI] Got headers from global getRequestHeaders');
+            } catch (e) {
+                console.warn('[Sidecar AI] Error calling global getRequestHeaders:', e);
+            }
         }
-        if (typeof window !== 'undefined' && window.getRequestHeaders && typeof window.getRequestHeaders === 'function') {
-            return window.getRequestHeaders();
+        
+        // Method 2: Through window object
+        if (!headers && typeof window !== 'undefined') {
+            if (window.getRequestHeaders && typeof window.getRequestHeaders === 'function') {
+                try {
+                    headers = window.getRequestHeaders();
+                    console.log('[Sidecar AI] Got headers from window.getRequestHeaders');
+                } catch (e) {
+                    console.warn('[Sidecar AI] Error calling window.getRequestHeaders:', e);
+                }
+            }
+            // Also try through SillyTavern global
+            if (!headers && window.SillyTavern && window.SillyTavern.getRequestHeaders && typeof window.SillyTavern.getRequestHeaders === 'function') {
+                try {
+                    headers = window.SillyTavern.getRequestHeaders();
+                    console.log('[Sidecar AI] Got headers from window.SillyTavern.getRequestHeaders');
+                } catch (e) {
+                    console.warn('[Sidecar AI] Error calling window.SillyTavern.getRequestHeaders:', e);
+                }
+            }
         }
-        if (this.context && this.context.getRequestHeaders && typeof this.context.getRequestHeaders === 'function') {
-            return this.context.getRequestHeaders();
+        
+        // Method 3: Through context
+        if (!headers && this.context && this.context.getRequestHeaders && typeof this.context.getRequestHeaders === 'function') {
+            try {
+                headers = this.context.getRequestHeaders();
+                console.log('[Sidecar AI] Got headers from context.getRequestHeaders');
+            } catch (e) {
+                console.warn('[Sidecar AI] Error calling context.getRequestHeaders:', e);
+            }
         }
-        // Fallback to basic headers
-        return {
-            'Content-Type': 'application/json'
-        };
+        
+        // Fallback: Basic headers (won't work for authenticated endpoints)
+        if (!headers) {
+            console.warn('[Sidecar AI] getRequestHeaders not found, using basic headers (may cause 403)');
+            headers = {
+                'Content-Type': 'application/json'
+            };
+        }
+        
+        console.log('[Sidecar AI] Request headers:', Object.keys(headers || {}));
+        return headers;
     }
 
     /**

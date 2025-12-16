@@ -626,7 +626,7 @@ export class SettingsUI {
         }
 
         $('#add_ons_form_api_url').val(addon.apiUrl || '');
-        
+
         // Handle service provider (OpenRouter only)
         if (addon.serviceProvider && Array.isArray(addon.serviceProvider)) {
             $('#add_ons_form_service_provider').val(addon.serviceProvider);
@@ -634,7 +634,7 @@ export class SettingsUI {
             $('#add_ons_form_service_provider').val([]);
         }
         this.toggleServiceProviderField(addon.aiProvider);
-        
+
         $('#add_ons_form_result_format').val(addon.resultFormat);
         $('#add_ons_form_response_location').val(addon.responseLocation);
 
@@ -779,19 +779,19 @@ export class SettingsUI {
      */
     loadServiceProviders() {
         const $serviceProviderSelect = $('#add_ons_form_service_provider');
-        
+
         // Try to get options from SillyTavern's OpenRouter providers dropdown
         const $stSelect = $('#openrouter_providers_chat');
         if ($stSelect.length > 0 && $stSelect.find('option').length > 0) {
             // Clear existing options
             $serviceProviderSelect.empty();
-            
+
             // Copy options from SillyTavern's dropdown
-            $stSelect.find('option').each(function() {
+            $stSelect.find('option').each(function () {
                 const $option = $(this);
                 const value = $option.val();
                 const text = $option.text();
-                
+
                 if (value) {
                     $serviceProviderSelect.append(
                         $('<option></option>')
@@ -800,7 +800,7 @@ export class SettingsUI {
                     );
                 }
             });
-            
+
             console.log(`[Sidecar AI] Loaded ${$serviceProviderSelect.find('option').length} service providers`);
         } else {
             console.log('[Sidecar AI] OpenRouter providers dropdown not found, service providers not loaded');
@@ -881,7 +881,7 @@ export class SettingsUI {
             // If using ST key, save empty string (we'll fetch from ST when needed)
 
             // Get service provider (OpenRouter only)
-            const serviceProvider = provider === 'openrouter' 
+            const serviceProvider = provider === 'openrouter'
                 ? ($('#add_ons_form_service_provider').val() || [])
                 : [];
 
