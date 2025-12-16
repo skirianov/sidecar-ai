@@ -342,7 +342,34 @@
     white-space: nowrap;
 }
 
-/* API key row - simplified since button removed */
+/* API key row with test button */
+.add_ons_api_key_row .text_pole {
+    flex: 1;
+    min-width: 0;
+}
+
+.add_ons_api_key_row .menu_button {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+
+/* Field error/success highlighting */
+.add_ons_field_error {
+    border-color: #e84118 !important;
+    background-color: rgba(232, 65, 24, 0.1) !important;
+    animation: shake 0.3s;
+}
+
+.add_ons_field_success {
+    border-color: #4cd137 !important;
+    background-color: rgba(76, 209, 55, 0.1) !important;
+}
+
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-5px); }
+    75% { transform: translateX(5px); }
+}
 
 .add_ons_form_checkboxes {
     display: flex;

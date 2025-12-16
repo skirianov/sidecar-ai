@@ -164,7 +164,7 @@ async function loadModules() {
             aiClient,
             resultFormatter
         );
-        const settingsUI = new SettingsUI(context, addonManager);
+        const settingsUI = new SettingsUI(context, addonManager, aiClient);
 
         // Load saved add-ons
         await addonManager.loadAddons();

@@ -160,6 +160,12 @@ export class AIClient {
             console.log('[Sidecar AI] Using custom API URL:', endpoint);
         }
 
+        // Get API key from addon or fallback to provider key
+        const apiKey = addon.apiKey || this.getProviderApiKey(provider);
+        if (!apiKey) {
+            throw new Error(`No API key found for provider: ${provider}`);
+        }
+
         const requestBody = this.buildRequestBody(provider, model, prompt);
 
         const headers = {
@@ -330,6 +336,118 @@ export class AIClient {
             results.push('');
         }
         return results;
+    }
+
+    /**
+     * Test API connection with provided credentials
+     * Sends a minimal test request to validate API key, model, and endpoint
+     */
+    async testConnection(provider, model, apiKey, apiUrl = null) {
+        try {
+            const chatCompletionSource = this.getChatCompletionSource(provider);
+            
+            // Use SillyTavern's ChatCompletionService if available
+            if (this.context && this.context.ChatCompletionService) {
+                console.log(`[Sidecar AI] Testing connection: ${provider} (${model})`);
+                
+                // Create a minimal test request
+                const testMessages = [{ role: 'user', content: 'test' }];
+                
+                // Temporarily override API key if provided
+                const originalApiKey = this.getProviderApiKey(provider);
+                
+                const requestOptions = {
+                    stream: false,
+                    messages: testMessages,
+                    model: model,
+                    chat_completion_source: chatCompletionSource,
+                    max_tokens: 10, // Minimal tokens for test
+                    temperature: 0.7,
+                    custom_url: apiUrl || undefined,
+                };
+                
+                // If we have a custom API key, we need to pass it somehow
+                // ChatCompletionService might use connection profiles, so we'll try direct API fallback
+                // if we have a custom key
+                if (apiKey && (!originalApiKey || apiKey !== originalApiKey)) {
+                    // Use fallback for custom API key
+                    return await this.testConnectionDirect(provider, model, apiKey, apiUrl);
+                }
+                
+                const response = await this.context.ChatCompletionService.processRequest(
+                    requestOptions,
+                    { presetName: undefined },
+                    true
+                );
+                
+                // If we got a response (even empty), connection works
+                return { success: true, message: 'Connection successful' };
+            }
+            
+            // Fallback: test direct API connection
+            return await this.testConnectionDirect(provider, model, apiKey, apiUrl);
+        } catch (error) {
+            console.error('[Sidecar AI] Connection test failed:', error);
+            const errorMessage = error.message || String(error);
+            return { 
+                success: false, 
+                message: errorMessage.includes('401') || errorMessage.includes('Unauthorized') 
+                    ? 'Invalid API key' 
+                    : errorMessage.includes('404') || errorMessage.includes('Not Found')
+                    ? 'Invalid model or endpoint'
+                    : errorMessage.includes('429')
+                    ? 'Rate limit exceeded'
+                    : `Connection failed: ${errorMessage}`
+            };
+        }
+    }
+    
+    /**
+     * Test connection using direct API call (fallback)
+     */
+    async testConnectionDirect(provider, model, apiKey, apiUrl = null) {
+        if (!apiKey) {
+            throw new Error('API key is required');
+        }
+        
+        let endpoint = apiUrl;
+        if (!endpoint) {
+            endpoint = this.getProviderEndpoint(provider);
+        }
+        
+        const requestBody = this.buildRequestBody(provider, model, 'test');
+        
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${apiKey}`
+        };
+        
+        // OpenRouter headers
+        if (provider === 'openrouter') {
+            headers['HTTP-Referer'] = window.location.origin || 'https://github.com/skirianov/sidecar-ai';
+            headers['X-Title'] = 'Sidecar AI';
+        }
+        
+        const response = await fetch(endpoint, {
+            method: 'POST',
+            headers: headers,
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`API request failed: ${response.status} ${errorText}`);
+        }
+        
+        const data = await response.json();
+        
+        // Verify we got a valid response
+        const content = this.extractContent(data, provider);
+        if (!content && !data.choices && !data.content) {
+            throw new Error('Invalid response format');
+        }
+        
+        return { success: true, message: 'Connection successful' };
     }
 
     /**

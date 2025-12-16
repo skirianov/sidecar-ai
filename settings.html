@@ -110,8 +110,11 @@
                 <div class="add_ons_form_row" id="add_ons_api_key_row">
                     <div class="add_ons_form_group" style="grid-column: 1 / -1;">
                         <label for="add_ons_form_api_key">API Key *</label>
-                        <input type="password" id="add_ons_form_api_key" name="apiKey" class="text_pole" required placeholder="Enter your API key">
-                        <small class="add_ons_form_hint">API key is saved securely in extension settings</small>
+                        <div style="display: flex; gap: 8px; align-items: stretch;">
+                            <input type="password" id="add_ons_form_api_key" name="apiKey" class="text_pole" required placeholder="Enter your API key" style="flex: 1; min-width: 0;">
+                            <button type="button" class="menu_button add_ons_button_small" id="add_ons_test_connection" title="Test API connection">Test Connection</button>
+                        </div>
+                        <small class="add_ons_form_hint">API key is saved securely in extension settings. Test connection before saving.</small>
                     </div>
                 </div>
 

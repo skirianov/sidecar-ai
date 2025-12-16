@@ -1,7 +1,8 @@
 export class SettingsUI {
-    constructor(context, addonManager) {
+    constructor(context, addonManager, aiClient) {
         this.context = context;
         this.addonManager = addonManager;
+        this.aiClient = aiClient;
         this.initialized = false;
     }
 
@@ -175,6 +176,13 @@ export class SettingsUI {
         $(document).off('change.sidecar', '#add_ons_form_ai_provider').on('change.sidecar', '#add_ons_form_ai_provider', function (e) {
             e.stopPropagation();
             self.loadModelsForProvider($(this).val());
+        });
+
+        // Test Connection button
+        $(document).off('click.sidecar', '#add_ons_test_connection').on('click.sidecar', '#add_ons_test_connection', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            self.testConnection();
         });
 
     }
@@ -590,6 +598,101 @@ export class SettingsUI {
         $('#add_ons_form_include_world_card').prop('checked', ctx.includeWorldCard !== false);
     }
 
+    /**
+     * Test API connection with current form values
+     */
+    async testConnection() {
+        const provider = $('#add_ons_form_ai_provider').val();
+        const model = $('#add_ons_form_ai_model').val();
+        const apiKey = $('#add_ons_form_api_key').val()?.trim();
+        const apiUrl = $('#add_ons_form_api_url').val()?.trim() || null;
+
+        // Validate required fields
+        if (!provider) {
+            alert('Please select an AI Provider first.');
+            $('#add_ons_form_ai_provider').focus();
+            this.highlightError('#add_ons_form_ai_provider');
+            return;
+        }
+
+        if (!model) {
+            alert('Please select a Model first.');
+            $('#add_ons_form_ai_model').focus();
+            this.highlightError('#add_ons_form_ai_model');
+            return;
+        }
+
+        if (!apiKey) {
+            alert('Please enter an API Key first.');
+            $('#add_ons_form_api_key').focus();
+            this.highlightError('#add_ons_form_api_key');
+            return;
+        }
+
+        // Clear previous errors
+        this.clearErrors();
+
+        // Show loading state
+        const testButton = $('#add_ons_test_connection');
+        const originalText = testButton.text();
+        testButton.prop('disabled', true).text('Testing...');
+
+        try {
+            if (!this.aiClient) {
+                throw new Error('AI Client not initialized');
+            }
+
+            const result = await this.aiClient.testConnection(provider, model, apiKey, apiUrl);
+
+            if (result.success) {
+                alert('✓ Connection successful!');
+                this.highlightSuccess('#add_ons_form_api_key');
+                this.highlightSuccess('#add_ons_form_ai_provider');
+                this.highlightSuccess('#add_ons_form_ai_model');
+            } else {
+                alert(`✗ Connection failed: ${result.message}`);
+                this.highlightError('#add_ons_form_api_key');
+                this.highlightError('#add_ons_form_ai_provider');
+                this.highlightError('#add_ons_form_ai_model');
+            }
+        } catch (error) {
+            console.error('[Sidecar AI] Connection test error:', error);
+            alert(`✗ Connection test failed: ${error.message || String(error)}`);
+            this.highlightError('#add_ons_form_api_key');
+            this.highlightError('#add_ons_form_ai_provider');
+            this.highlightError('#add_ons_form_ai_model');
+        } finally {
+            testButton.prop('disabled', false).text(originalText);
+        }
+    }
+
+    /**
+     * Highlight field with error styling
+     */
+    highlightError(selector) {
+        $(selector).addClass('add_ons_field_error');
+        setTimeout(() => {
+            $(selector).removeClass('add_ons_field_error');
+        }, 3000);
+    }
+
+    /**
+     * Highlight field with success styling
+     */
+    highlightSuccess(selector) {
+        $(selector).addClass('add_ons_field_success');
+        setTimeout(() => {
+            $(selector).removeClass('add_ons_field_success');
+        }, 2000);
+    }
+
+    /**
+     * Clear all error/success highlights
+     */
+    clearErrors() {
+        $('.add_ons_field_error, .add_ons_field_success').removeClass('add_ons_field_error add_ons_field_success');
+    }
+
     async saveAddon() {
         const form = $('#add_ons_form')[0];
         if (!form.checkValidity()) {
@@ -602,37 +705,69 @@ export class SettingsUI {
         if (!apiKey || apiKey.trim() === '') {
             alert('API Key is required. Please enter your API key.');
             $('#add_ons_form_api_key').focus();
+            this.highlightError('#add_ons_form_api_key');
             return;
         }
 
-        const formData = {
-            id: $('#add_ons_form_id').val(),
-            name: $('#add_ons_form_name').val(),
-            description: $('#add_ons_form_description').val(),
-            prompt: $('#add_ons_form_prompt').val(),
-            triggerMode: $('#add_ons_form_trigger_mode').val(),
-            requestMode: $('#add_ons_form_request_mode').val(),
-            aiProvider: $('#add_ons_form_ai_provider').val(),
-            aiModel: $('#add_ons_form_ai_model').val(),
-            apiKey: apiKey.trim(), // Required - save trimmed value
-            apiUrl: $('#add_ons_form_api_url').val()?.trim() || '', // Optional
-            resultFormat: $('#add_ons_form_result_format').val(),
-            responseLocation: $('#add_ons_form_response_location').val(),
-            contextSettings: {
-                messagesCount: parseInt($('#add_ons_form_messages_count').val()) || 10,
-                includeCharCard: $('#add_ons_form_include_char_card').is(':checked'),
-                includeUserCard: $('#add_ons_form_include_user_card').is(':checked'),
-                includeWorldCard: $('#add_ons_form_include_world_card').is(':checked')
-            },
-            enabled: true
-        };
+        const provider = $('#add_ons_form_ai_provider').val();
+        const model = $('#add_ons_form_ai_model').val();
+        const apiUrl = $('#add_ons_form_api_url').val()?.trim() || null;
 
-        if (!this.addonManager) {
-            alert('Sidecar AI not initialized. Please refresh the page.');
-            return;
-        }
+        // Test connection before saving
+        const saveButton = $('#add_ons_form_save');
+        const originalText = saveButton.text();
+        saveButton.prop('disabled', true).text('Testing connection...');
 
         try {
+            // Clear previous errors
+            this.clearErrors();
+
+            if (this.aiClient) {
+                const testResult = await this.aiClient.testConnection(provider, model, apiKey.trim(), apiUrl);
+                
+                if (!testResult.success) {
+                    alert(`✗ Cannot save: Connection test failed.\n\n${testResult.message}\n\nPlease check your API key, model, and endpoint settings.`);
+                    this.highlightError('#add_ons_form_api_key');
+                    this.highlightError('#add_ons_form_ai_provider');
+                    this.highlightError('#add_ons_form_ai_model');
+                    if (apiUrl) {
+                        this.highlightError('#add_ons_form_api_url');
+                    }
+                    saveButton.prop('disabled', false).text(originalText);
+                    return;
+                }
+            }
+
+            // Connection test passed, proceed with save
+            saveButton.text('Saving...');
+
+            const formData = {
+                id: $('#add_ons_form_id').val(),
+                name: $('#add_ons_form_name').val(),
+                description: $('#add_ons_form_description').val(),
+                prompt: $('#add_ons_form_prompt').val(),
+                triggerMode: $('#add_ons_form_trigger_mode').val(),
+                requestMode: $('#add_ons_form_request_mode').val(),
+                aiProvider: provider,
+                aiModel: model,
+                apiKey: apiKey.trim(), // Required - save trimmed value
+                apiUrl: apiUrl || '', // Optional
+                resultFormat: $('#add_ons_form_result_format').val(),
+                responseLocation: $('#add_ons_form_response_location').val(),
+                contextSettings: {
+                    messagesCount: parseInt($('#add_ons_form_messages_count').val()) || 10,
+                    includeCharCard: $('#add_ons_form_include_char_card').is(':checked'),
+                    includeUserCard: $('#add_ons_form_include_user_card').is(':checked'),
+                    includeWorldCard: $('#add_ons_form_include_world_card').is(':checked')
+                },
+                enabled: true
+            };
+
+            if (!this.addonManager) {
+                alert('Sidecar AI not initialized. Please refresh the page.');
+                return;
+            }
+
             if (formData.id) {
                 this.addonManager.updateAddon(formData.id, formData);
             } else {
@@ -647,6 +782,9 @@ export class SettingsUI {
         } catch (error) {
             console.error('Error saving Sidecar:', error);
             alert('Error saving Sidecar: ' + error.message);
+            this.highlightError('#add_ons_form_api_key');
+        } finally {
+            saveButton.prop('disabled', false).text(originalText);
         }
     }
 
