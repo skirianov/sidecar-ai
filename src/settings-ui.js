@@ -459,7 +459,7 @@ export class SettingsUI {
                         }
                     });
                 }
-                
+
                 // Only return if we actually found models (not just provider names)
                 if (foundModels && models.length > 0) {
                     console.log('[Sidecar AI] Loaded', models.length, 'models from openrouter_providers');

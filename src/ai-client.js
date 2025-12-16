@@ -17,7 +17,7 @@ export class AIClient {
             'openai': 'openai',
             'openrouter': 'openrouter',
             'anthropic': 'anthropic',
-            'google': 'google',
+            'google': 'makersuite', // Google uses MAKERSUITE, not 'google'
             'deepseek': 'deepseek',
             'cohere': 'cohere',
             'custom': 'custom',
