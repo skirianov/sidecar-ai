@@ -30,6 +30,53 @@ function getGetContext() {
     return null;
 }
 
+function getExtensionDirectory() {
+    // Get the directory of the extension
+    let index_path = new URL(import.meta.url).pathname;
+    return index_path.substring(0, index_path.lastIndexOf('/'));  // remove the /index.js from the path
+}
+
+async function loadSettingsHTML() {
+    // Fetch the settings.html file and append it to the settings div (like qvink extension does)
+    console.log('[Add-Ons Extension] Loading settings.html...');
+
+    try {
+        const module_dir = getExtensionDirectory();
+        const path = `${module_dir}/settings.html`;
+
+        // Use fetch instead of $.get for better compatibility
+        const response = await fetch(path);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const html = await response.text();
+        const settingsContainer = document.getElementById('extensions_settings2');
+
+        if (settingsContainer) {
+            settingsContainer.insertAdjacentHTML('beforeend', html);
+            console.log('[Add-Ons Extension] Loaded settings.html successfully');
+            return true;
+        } else {
+            console.warn('[Add-Ons Extension] #extensions_settings2 container not found, will retry...');
+            // Retry after a delay
+            setTimeout(async () => {
+                const retryContainer = document.getElementById('extensions_settings2');
+                if (retryContainer) {
+                    retryContainer.insertAdjacentHTML('beforeend', html);
+                    console.log('[Add-Ons Extension] Loaded settings.html on retry');
+                } else {
+                    console.error('[Add-Ons Extension] Failed to find #extensions_settings2 container');
+                }
+            }, 1000);
+            return false;
+        }
+    } catch (error) {
+        console.error('[Add-Ons Extension] Error loading settings.html:', error);
+        return false;
+    }
+}
+
 async function loadModules() {
     try {
         const [
@@ -74,7 +121,7 @@ async function loadModules() {
     console.log('[Add-Ons Extension] Modules loaded, getting context...');
 
     // Get getContext function
-    const getContext = getGetContext();
+    let getContext = getGetContext();
     if (!getContext) {
         console.error('[Add-Ons Extension] getContext function not available. Trying to wait...');
         // Wait a bit for SillyTavern to initialize
@@ -116,6 +163,9 @@ async function loadModules() {
 
         // Register event listeners
         eventHandler.registerListeners();
+
+        // Load settings.html manually (like qvink extension does)
+        await loadSettingsHTML();
 
         // Initialize settings UI
         // SillyTavern loads settings.html as regular HTML (not Handlebars template)
