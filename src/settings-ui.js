@@ -777,7 +777,7 @@ export class SettingsUI {
         $('#add_ons_form_include_world_card').prop('checked', ctx.includeWorldCard !== false);
     }
 
-    saveAddon() {
+    async saveAddon() {
         const form = $('#add_ons_form')[0];
         if (!form.checkValidity()) {
             form.reportValidity();
@@ -821,7 +821,6 @@ export class SettingsUI {
 
         try {
             if (formData.id) {
-                if (formData.id) {
                 this.addonManager.updateAddon(formData.id, formData);
             } else {
                 this.addonManager.createAddon(formData);
