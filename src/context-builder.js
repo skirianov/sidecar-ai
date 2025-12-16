@@ -30,19 +30,50 @@ export class ContextBuilder {
     }
 
     /**
-     * Build prompt from template with variable substitution
+     * Build prompt with automatic context inclusion
+     * Context sections are automatically included based on checkboxes
+     * User's prompt is just the instruction, no variables needed
      */
     buildPrompt(addon, context) {
-        let prompt = addon.prompt || '';
+        const settings = addon.contextSettings || {};
+        const userPrompt = addon.prompt || '';
+        const parts = [];
 
-        // Replace variables
-        prompt = prompt.replace(/\{\{lastMessages\}\}/g, context.lastMessages);
-        prompt = prompt.replace(/\{\{charCard\}\}/g, context.charCard);
-        prompt = prompt.replace(/\{\{userCard\}\}/g, context.userCard);
-        prompt = prompt.replace(/\{\{worldCard\}\}/g, context.worldCard);
-        prompt = prompt.replace(/\{\{currentMessage\}\}/g, context.currentMessage);
+        // Always include chat history (controlled by messagesCount)
+        if (context.lastMessages && context.lastMessages !== 'No previous messages.') {
+            parts.push('=== Chat History ===');
+            parts.push(context.lastMessages);
+            parts.push(''); // Empty line for spacing
+        }
 
-        return prompt;
+        // Include character card if enabled
+        if (settings.includeCharCard && context.charCard) {
+            parts.push('=== Character Card ===');
+            parts.push(context.charCard);
+            parts.push(''); // Empty line for spacing
+        }
+
+        // Include user card if enabled
+        if (settings.includeUserCard && context.userCard) {
+            parts.push('=== User Card ===');
+            parts.push(context.userCard);
+            parts.push(''); // Empty line for spacing
+        }
+
+        // Include world card if enabled
+        if (settings.includeWorldCard && context.worldCard) {
+            parts.push('=== World Card ===');
+            parts.push(context.worldCard);
+            parts.push(''); // Empty line for spacing
+        }
+
+        // Add user's prompt at the end
+        if (userPrompt.trim()) {
+            parts.push('=== Instruction ===');
+            parts.push(userPrompt);
+        }
+
+        return parts.join('\n').trim();
     }
 
     /**

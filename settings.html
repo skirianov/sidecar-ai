@@ -46,16 +46,9 @@
                     </div>
 
                     <div class="add_ons_form_group">
-                        <label for="add_ons_form_prompt">Prompt Template *</label>
-                        <div class="add_ons_variable_buttons">
-                            <button type="button" class="menu_button add_ons_var_button" data-variable="{{lastMessages}}" title="Insert last messages">Insert {{lastMessages}}</button>
-                            <button type="button" class="menu_button add_ons_var_button" data-variable="{{charCard}}" title="Insert character card">Insert {{charCard}}</button>
-                            <button type="button" class="menu_button add_ons_var_button" data-variable="{{userCard}}" title="Insert user card">Insert {{userCard}}</button>
-                            <button type="button" class="menu_button add_ons_var_button" data-variable="{{worldCard}}" title="Insert world card">Insert {{worldCard}}</button>
-                            <button type="button" class="menu_button add_ons_var_button" data-variable="{{currentMessage}}" title="Insert current message">Insert {{currentMessage}}</button>
-                        </div>
-                        <textarea id="add_ons_form_prompt" name="prompt" class="text_pole" rows="10" required placeholder="Enter your prompt template here. Use variables: {{lastMessages}}, {{charCard}}, {{userCard}}, {{worldCard}}, {{currentMessage}}"></textarea>
-                        <small class="add_ons_form_hint">Click buttons above to insert variables. Variables will only be replaced if the corresponding checkbox below is enabled.</small>
+                        <label for="add_ons_form_prompt">Prompt / Instruction *</label>
+                        <textarea id="add_ons_form_prompt" name="prompt" class="text_pole" rows="8" required placeholder="Enter your instruction here. Context (chat history, character card, user card, world card) will be automatically included based on settings below."></textarea>
+                        <small class="add_ons_form_hint">Just write your instruction. All necessary context (chat history, cards) will be automatically included based on the checkboxes below.</small>
                     </div>
 
                     <div class="add_ons_form_row">
@@ -149,20 +142,20 @@
                         </div>
 
                         <div class="add_ons_form_checkboxes">
-                            <label class="add_ons_checkbox checkbox_label" title="Enable to make {{charCard}} variable available in your prompt">
+                            <label class="add_ons_checkbox checkbox_label" title="Include character card data in the context sent to AI">
                                 <input type="checkbox" id="add_ons_form_include_char_card" name="includeCharCard" checked>
-                                <span>Enable {{charCard}} variable</span>
+                                <span>Include Character Card</span>
                             </label>
-                            <label class="add_ons_checkbox checkbox_label" title="Enable to make {{userCard}} variable available in your prompt">
+                            <label class="add_ons_checkbox checkbox_label" title="Include user card data in the context sent to AI">
                                 <input type="checkbox" id="add_ons_form_include_user_card" name="includeUserCard" checked>
-                                <span>Enable {{userCard}} variable</span>
+                                <span>Include User Card</span>
                             </label>
-                            <label class="add_ons_checkbox checkbox_label" title="Enable to make {{worldCard}} variable available in your prompt">
+                            <label class="add_ons_checkbox checkbox_label" title="Include world card data in the context sent to AI">
                                 <input type="checkbox" id="add_ons_form_include_world_card" name="includeWorldCard" checked>
-                                <span>Enable {{worldCard}} variable</span>
+                                <span>Include World Card</span>
                             </label>
                         </div>
-                        <small class="add_ons_form_hint">These checkboxes control which variables are available. Variables in your prompt will only be replaced if the corresponding checkbox is enabled.</small>
+                        <small class="add_ons_form_hint">These checkboxes control which context data is automatically included. Chat history is always included based on "Number of Messages" above.</small>
                     </div>
                 </form>
             </div>

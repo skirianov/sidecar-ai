@@ -154,23 +154,7 @@ export class SettingsUI {
             e.stopPropagation();
         });
 
-        // Variable insertion buttons
-        $(document).off('click.sidecar', '.add_ons_var_button').on('click.sidecar', '.add_ons_var_button', function (e) {
-            e.preventDefault();
-            e.stopPropagation();
-            const variable = $(this).data('variable');
-            const textarea = $('#add_ons_form_prompt')[0];
-            if (textarea) {
-                const start = textarea.selectionStart;
-                const end = textarea.selectionEnd;
-                const text = textarea.value;
-                const before = text.substring(0, start);
-                const after = text.substring(end);
-                textarea.value = before + variable + after;
-                textarea.selectionStart = textarea.selectionEnd = start + variable.length;
-                textarea.focus();
-            }
-        });
+        // Variable insertion buttons removed - no longer needed
 
         // Provider change - load models
         $(document).off('change.sidecar', '#add_ons_form_ai_provider').on('change.sidecar', '#add_ons_form_ai_provider', function (e) {
@@ -724,7 +708,7 @@ export class SettingsUI {
 
             if (this.aiClient) {
                 const testResult = await this.aiClient.testConnection(provider, model, apiKey.trim(), apiUrl);
-                
+
                 if (!testResult.success) {
                     alert(`✗ Cannot save: Connection test failed.\n\n${testResult.message}\n\nPlease check your API key, model, and endpoint settings.`);
                     this.highlightError('#add_ons_form_api_key');

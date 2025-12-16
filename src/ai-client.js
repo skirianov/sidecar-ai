@@ -350,14 +350,14 @@ export class AIClient {
                 console.log(`[Sidecar AI] Testing connection directly: ${provider} (${model})`);
                 return await this.testConnectionDirect(provider, model, apiKey, apiUrl);
             }
-            
+
             // If no API key provided, try using ChatCompletionService with ST's configured key
             const chatCompletionSource = this.getChatCompletionSource(provider);
             if (this.context && this.context.ChatCompletionService) {
                 console.log(`[Sidecar AI] Testing connection via ChatCompletionService: ${provider} (${model})`);
-                
+
                 const testMessages = [{ role: 'user', content: 'test' }];
-                
+
                 const requestOptions = {
                     stream: false,
                     messages: testMessages,
@@ -367,36 +367,36 @@ export class AIClient {
                     temperature: 0.7,
                     custom_url: apiUrl || undefined,
                 };
-                
+
                 const response = await this.context.ChatCompletionService.processRequest(
                     requestOptions,
                     { presetName: undefined },
                     true
                 );
-                
+
                 // If we got a response (even empty), connection works
                 return { success: true, message: 'Connection successful' };
             }
-            
+
             throw new Error('No API key provided and ChatCompletionService not available');
         } catch (error) {
             console.error('[Sidecar AI] Connection test failed:', error);
             const errorMessage = error.message || String(error);
-            return { 
-                success: false, 
-                message: errorMessage.includes('401') || errorMessage.includes('Unauthorized') 
-                    ? 'Invalid API key' 
+            return {
+                success: false,
+                message: errorMessage.includes('401') || errorMessage.includes('Unauthorized')
+                    ? 'Invalid API key'
                     : errorMessage.includes('404') || errorMessage.includes('Not Found')
-                    ? 'Invalid model or endpoint'
-                    : errorMessage.includes('429')
-                    ? 'Rate limit exceeded'
-                    : errorMessage.includes('403') || errorMessage.includes('Forbidden')
-                    ? 'API key does not have permission'
-                    : `Connection failed: ${errorMessage}`
+                        ? 'Invalid model or endpoint'
+                        : errorMessage.includes('429')
+                            ? 'Rate limit exceeded'
+                            : errorMessage.includes('403') || errorMessage.includes('Forbidden')
+                                ? 'API key does not have permission'
+                                : `Connection failed: ${errorMessage}`
             };
         }
     }
-    
+
     /**
      * Test connection using direct API call (fallback)
      */
@@ -404,44 +404,44 @@ export class AIClient {
         if (!apiKey) {
             throw new Error('API key is required');
         }
-        
+
         let endpoint = apiUrl;
         if (!endpoint) {
             endpoint = this.getProviderEndpoint(provider);
         }
-        
+
         const requestBody = this.buildRequestBody(provider, model, 'test');
-        
+
         const headers = {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${apiKey}`
         };
-        
+
         // OpenRouter headers
         if (provider === 'openrouter') {
             headers['HTTP-Referer'] = window.location.origin || 'https://github.com/skirianov/sidecar-ai';
             headers['X-Title'] = 'Sidecar AI';
         }
-        
+
         const response = await fetch(endpoint, {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(requestBody)
         });
-        
+
         if (!response.ok) {
             const errorText = await response.text();
             throw new Error(`API request failed: ${response.status} ${errorText}`);
         }
-        
+
         const data = await response.json();
-        
+
         // Verify we got a valid response
         const content = this.extractContent(data, provider);
         if (!content && !data.choices && !data.content) {
             throw new Error('Invalid response format');
         }
-        
+
         return { success: true, message: 'Connection successful' };
     }
 

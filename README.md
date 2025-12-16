@@ -1,3 +1,5 @@
+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
+
 # SillyTavern Sidecar AI Add-Ons
 
 **Version:** 0.1.1
