@@ -627,7 +627,7 @@ export class SettingsUI {
                 `input[name="${secretKey}"]`,
                 `input[data-secret-key="${secretKey}"]`
             ];
-            
+
             for (const selector of inputSelectors) {
                 const $input = $(selector);
                 if ($input.length && $input.val()) {

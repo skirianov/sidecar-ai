@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2025-12-16
+
+### Fixed
+- Fixed modal layout issues (API Key field truncation, button alignment)
+- Fixed API key loading from SillyTavern's secret_state storage
+- Fixed secret_state extraction to handle array format correctly
+- Fixed Result Format/Response Location row structure in modal
+
+### Changed
+- Improved API key lookup with better fallback methods
+- Enhanced logging for API key debugging
+
 ## [0.1.0] - 2025-12-16
 
 ### Added
@@ -35,4 +47,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Automatically handles API keys, URLs, proxies, and headers via SillyTavern backend
 - Proper event namespacing to prevent conflicts with SillyTavern's native handlers
 
+[0.1.1]: https://github.com/skirianov/sidecar-ai/releases/tag/v0.1.1
 [0.1.0]: https://github.com/skirianov/sidecar-ai/releases/tag/v0.1.0
