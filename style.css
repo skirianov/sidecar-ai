@@ -514,7 +514,50 @@
     transform: translateX(20px);
 }
 
-/* Dropdown UI - Must use !important to override any white backgrounds */
+/* Sidecar Container - Inside chat, after each message */
+.sidecar-container {
+    margin-top: 10px !important;
+    padding: 10px !important;
+    border: 1px solid var(--SmartThemeBorderColor, #555) !important;
+    border-radius: 5px !important;
+    background: var(--SmartThemeBodyColor, #1e1e1e) !important;
+    background-color: var(--SmartThemeBodyColor, #1e1e1e) !important;
+    color: var(--SmartThemeBodyColor, #eee) !important;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+}
+
+.sidecar-container * {
+    background-color: var(--SmartThemeBodyColor, #1e1e1e) !important;
+    background: var(--SmartThemeBodyColor, #1e1e1e) !important;
+    color: var(--SmartThemeBodyColor, #eee) !important;
+}
+
+/* Loading indicator */
+.sidecar-loading {
+    padding: 8px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    color: var(--SmartThemeBodyColor, rgba(255, 255, 255, 0.7)) !important;
+    background: transparent !important;
+    font-size: 0.9em !important;
+}
+
+.sidecar-loading .fa-spinner {
+    color: var(--SmartThemeEmColor, #9fc) !important;
+}
+
+/* Error indicator */
+.sidecar-error {
+    padding: 8px !important;
+    color: #ff6b6b !important;
+    background: rgba(255, 107, 107, 0.1) !important;
+    border: 1px solid rgba(255, 107, 107, 0.3) !important;
+    border-radius: 3px !important;
+    font-size: 0.9em !important;
+}
+
+/* Dropdown UI - Legacy support (outside chat) */
 #add-ons-dropdown-container,
 .add-ons-dropdown-container {
     margin: 10px !important;

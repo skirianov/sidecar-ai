@@ -90,80 +90,190 @@ export class ResultFormatter {
     }
 
     /**
-     * Inject result into dropdown UI
+     * Show loading indicator for an add-on (inside chat, after message)
      */
-    injectIntoDropdown(addon, formattedResult) {
+    showLoadingIndicator(messageId, addon) {
         try {
-            let container = document.getElementById('add-ons-dropdown-container');
+            const messageElement = this.findMessageElement(messageId);
+            if (!messageElement) {
+                console.warn(`[Sidecar AI] Message element not found for loading indicator: ${messageId}`);
+                return;
+            }
 
-            if (!container) {
-                // Create container if it doesn't exist
-                container = document.createElement('div');
-                container.id = 'add-ons-dropdown-container';
-                container.className = 'add-ons-dropdown-container';
-
-                // Try to insert after chat container
-                const chatContainer = document.querySelector('#chat_container') ||
-                    document.querySelector('.chat_container');
-                if (chatContainer && chatContainer.parentElement) {
-                    chatContainer.parentElement.appendChild(container);
+            // Get or create Sidecar container for this message
+            let sidecarContainer = messageElement.querySelector(`.sidecar-container-${messageId}`);
+            if (!sidecarContainer) {
+                sidecarContainer = document.createElement('div');
+                sidecarContainer.className = `sidecar-container sidecar-container-${messageId}`;
+                sidecarContainer.style.cssText = 'margin-top: 10px; padding: 10px; background: var(--SmartThemeBodyColor, #1e1e1e) !important; border: 1px solid var(--SmartThemeBorderColor, #555) !important; border-radius: 5px !important;';
+                
+                // Insert after message content
+                const messageContent = messageElement.querySelector('.mes_text') || 
+                                      messageElement.querySelector('.message') ||
+                                      messageElement;
+                if (messageContent.nextSibling) {
+                    messageContent.parentElement.insertBefore(sidecarContainer, messageContent.nextSibling);
                 } else {
-                    document.body.appendChild(container);
+                    messageElement.appendChild(sidecarContainer);
+                }
+            }
+
+            // Create or update loading indicator for this addon
+            let loadingDiv = sidecarContainer.querySelector(`.sidecar-loading-${addon.id}`);
+            if (!loadingDiv) {
+                loadingDiv = document.createElement('div');
+                loadingDiv.className = `sidecar-loading sidecar-loading-${addon.id}`;
+                loadingDiv.style.cssText = 'padding: 8px; display: flex; align-items: center; gap: 8px; color: var(--SmartThemeBodyColor, rgba(255, 255, 255, 0.7)) !important;';
+                loadingDiv.innerHTML = `
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Processing ${addon.name}...</span>
+                `;
+                sidecarContainer.appendChild(loadingDiv);
+            }
+
+            console.log(`[Sidecar AI] Showing loading indicator for ${addon.name}`);
+        } catch (error) {
+            console.error(`[Sidecar AI] Error showing loading indicator:`, error);
+        }
+    }
+
+    /**
+     * Hide loading indicator for an add-on
+     */
+    hideLoadingIndicator(messageId, addon) {
+        try {
+            const messageElement = this.findMessageElement(messageId);
+            if (!messageElement) return;
+
+            const sidecarContainer = messageElement.querySelector(`.sidecar-container-${messageId}`);
+            if (sidecarContainer) {
+                const loadingDiv = sidecarContainer.querySelector(`.sidecar-loading-${addon.id}`);
+                if (loadingDiv) {
+                    loadingDiv.remove();
+                }
+            }
+        } catch (error) {
+            console.error(`[Sidecar AI] Error hiding loading indicator:`, error);
+        }
+    }
+
+    /**
+     * Show error indicator
+     */
+    showErrorIndicator(messageId, addon, error) {
+        try {
+            const messageElement = this.findMessageElement(messageId);
+            if (!messageElement) return;
+
+            let sidecarContainer = messageElement.querySelector(`.sidecar-container-${messageId}`);
+            if (!sidecarContainer) {
+                sidecarContainer = document.createElement('div');
+                sidecarContainer.className = `sidecar-container sidecar-container-${messageId}`;
+                sidecarContainer.style.cssText = 'margin-top: 10px; padding: 10px; background: var(--SmartThemeBodyColor, #1e1e1e) !important; border: 1px solid var(--SmartThemeBorderColor, #555) !important; border-radius: 5px !important;';
+                
+                const messageContent = messageElement.querySelector('.mes_text') || messageElement;
+                if (messageContent.nextSibling) {
+                    messageContent.parentElement.insertBefore(sidecarContainer, messageContent.nextSibling);
+                } else {
+                    messageElement.appendChild(sidecarContainer);
+                }
+            }
+
+            const errorDiv = document.createElement('div');
+            errorDiv.className = `sidecar-error sidecar-error-${addon.id}`;
+            errorDiv.style.cssText = 'padding: 8px; color: #ff6b6b !important;';
+            errorDiv.innerHTML = `<i class="fa-solid fa-exclamation-triangle"></i> Error processing ${addon.name}: ${error.message || error}`;
+            sidecarContainer.appendChild(errorDiv);
+        } catch (err) {
+            console.error(`[Sidecar AI] Error showing error indicator:`, err);
+        }
+    }
+
+    /**
+     * Inject result into dropdown UI (inside chat, after message)
+     */
+    injectIntoDropdown(addon, formattedResult, messageId = null) {
+        try {
+            // Use provided messageId or get from latest message
+            if (!messageId) {
+                messageId = this.getMessageId(null);
+            }
+            const messageElement = this.findMessageElement(messageId);
+            
+            if (!messageElement) {
+                console.warn(`[Sidecar AI] Message element not found for dropdown injection`);
+                return false;
+            }
+
+            // Get or create Sidecar container for this message
+            let sidecarContainer = messageElement.querySelector(`.sidecar-container-${messageId}`);
+            if (!sidecarContainer) {
+                sidecarContainer = document.createElement('div');
+                sidecarContainer.className = `sidecar-container sidecar-container-${messageId}`;
+                sidecarContainer.style.cssText = 'margin-top: 10px; padding: 10px; background: var(--SmartThemeBodyColor, #1e1e1e) !important; border: 1px solid var(--SmartThemeBorderColor, #555) !important; border-radius: 5px !important;';
+                
+                // Insert after message content
+                const messageContent = messageElement.querySelector('.mes_text') || 
+                                      messageElement.querySelector('.message') ||
+                                      messageElement;
+                if (messageContent.nextSibling) {
+                    messageContent.parentElement.insertBefore(sidecarContainer, messageContent.nextSibling);
+                } else {
+                    messageElement.appendChild(sidecarContainer);
                 }
             }
 
             // Create or update add-on section
-            let addonSection = document.getElementById(`addon-section-${addon.id}`);
+            let addonSection = sidecarContainer.querySelector(`.addon-section-${addon.id}`);
 
             if (!addonSection) {
                 addonSection = document.createElement('details');
-                addonSection.id = `addon-section-${addon.id}`;
-                addonSection.className = 'addon-result-section';
+                addonSection.className = `addon-result-section addon-section-${addon.id}`;
+                addonSection.open = true;
 
                 const summary = document.createElement('summary');
                 summary.className = 'addon-result-summary';
-                summary.textContent = `${addon.name} (${new Date().toLocaleTimeString()})`;
+                summary.textContent = `${addon.name}`;
+                summary.style.cssText = 'cursor: pointer; padding: 8px; background: var(--SmartThemeBlurTintColor, rgba(128, 128, 128, 0.2)) !important; border-radius: 3px; color: var(--SmartThemeBodyColor, #eee) !important;';
 
                 const content = document.createElement('div');
                 content.className = 'addon-result-content';
                 content.id = `addon-content-${addon.id}`;
+                content.style.cssText = 'padding: 10px; margin-top: 8px; background: var(--SmartThemeBodyColor, #1e1e1e) !important; color: var(--SmartThemeBodyColor, #eee) !important;';
 
                 addonSection.appendChild(summary);
                 addonSection.appendChild(content);
-                container.appendChild(addonSection);
+                sidecarContainer.appendChild(addonSection);
             }
 
             // Update content
-            const content = document.getElementById(`addon-content-${addon.id}`);
+            const content = addonSection.querySelector('.addon-result-content');
             if (content) {
                 // Clear existing content and add new result
                 content.innerHTML = '';
-                
-                // Append new result with timestamp
+
+                // Append new result
                 const resultDiv = document.createElement('div');
                 resultDiv.className = 'addon-result-item';
-                resultDiv.style.cssText = 'background: var(--SmartThemeBodyColor, #1e1e1e) !important; color: var(--SmartThemeBodyColor, #eee) !important;';
+                resultDiv.style.cssText = 'background: transparent !important; color: var(--SmartThemeBodyColor, #eee) !important;';
                 resultDiv.innerHTML = formattedResult;
 
                 const timestamp = document.createElement('div');
                 timestamp.className = 'addon-result-timestamp';
                 timestamp.textContent = `Generated at ${new Date().toLocaleTimeString()}`;
-                timestamp.style.cssText = 'color: var(--SmartThemeBodyColor, rgba(255, 255, 255, 0.5)) !important;';
+                timestamp.style.cssText = 'font-size: 0.8em; color: var(--SmartThemeBodyColor, rgba(255, 255, 255, 0.5)) !important; margin-top: 8px; font-style: italic;';
 
                 resultDiv.appendChild(timestamp);
                 content.appendChild(resultDiv);
 
-                // Auto-expand if collapsed
+                // Auto-expand
                 addonSection.open = true;
-                
-                // Scroll into view
-                addonSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
             }
 
-            console.log(`[Add-Ons Extension] Injected result into dropdown for: ${addon.name}`);
+            console.log(`[Sidecar AI] Injected result into dropdown for: ${addon.name}`);
             return true;
         } catch (error) {
-            console.error(`[Add-Ons Extension] Error injecting into dropdown:`, error);
+            console.error(`[Sidecar AI] Error injecting into dropdown:`, error);
             return false;
         }
     }

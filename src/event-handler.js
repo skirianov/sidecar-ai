@@ -258,7 +258,14 @@ export class EventHandler {
      */
     async processBatchGroup(addons, message) {
         try {
-            console.log(`[Add-Ons Extension] Processing batch group: ${addons.length} add-on(s)`);
+            console.log(`[Sidecar AI] Processing batch group: ${addons.length} add-on(s)`);
+
+            const messageId = this.resultFormatter.getMessageId(message);
+            
+            // Show loading indicators for all add-ons
+            addons.forEach(addon => {
+                this.resultFormatter.showLoadingIndicator(messageId, addon);
+            });
 
             // Build contexts for all add-ons
             const contexts = addons.map(addon => {
@@ -289,12 +296,20 @@ export class EventHandler {
                 const addon = addons[i];
                 const response = responses[i] || '';
 
+                // Hide loading indicator
+                this.resultFormatter.hideLoadingIndicator(messageId, addon);
+
                 if (response) {
                     await this.injectResult(addon, response, message);
                 }
             }
         } catch (error) {
-            console.error('[Add-Ons Extension] Error processing batch group:', error);
+            console.error('[Sidecar AI] Error processing batch group:', error);
+            const messageId = this.resultFormatter.getMessageId(message);
+            addons.forEach(addon => {
+                this.resultFormatter.hideLoadingIndicator(messageId, addon);
+                this.resultFormatter.showErrorIndicator(messageId, addon, error);
+            });
         }
     }
 
@@ -303,7 +318,11 @@ export class EventHandler {
      */
     async processStandaloneAddon(addon, message) {
         try {
-            console.log(`[Add-Ons Extension] Processing standalone add-on: ${addon.name}`);
+            console.log(`[Sidecar AI] Processing standalone add-on: ${addon.name}`);
+
+            // Show loading indicator BEFORE processing
+            const messageId = this.resultFormatter.getMessageId(message);
+            this.resultFormatter.showLoadingIndicator(messageId, addon);
 
             // Build context
             const chatLog = this.contextBuilder.getChatLog();
@@ -325,12 +344,17 @@ export class EventHandler {
             // Send to AI
             const response = await this.aiClient.sendToAI(addon, prompt);
 
-            // Inject result
+            // Hide loading and inject result
+            this.resultFormatter.hideLoadingIndicator(messageId, addon);
+            
             if (response) {
                 await this.injectResult(addon, response, message);
             }
         } catch (error) {
-            console.error(`[Add-Ons Extension] Error processing add-on ${addon.name}:`, error);
+            console.error(`[Sidecar AI] Error processing add-on ${addon.name}:`, error);
+            const messageId = this.resultFormatter.getMessageId(message);
+            this.resultFormatter.hideLoadingIndicator(messageId, addon);
+            this.resultFormatter.showErrorIndicator(messageId, addon, error);
         }
     }
 
@@ -346,8 +370,9 @@ export class EventHandler {
             console.log(`[Sidecar AI] Injecting into chat history for message: ${messageId}`);
             this.resultFormatter.injectIntoChatHistory(messageId, addon, formatted);
         } else {
-            console.log(`[Sidecar AI] Injecting into dropdown for: ${addon.name}`);
-            const success = this.resultFormatter.injectIntoDropdown(addon, formatted);
+            // For outsideChatlog, inject inside chat after the message (with dropdown UI)
+            console.log(`[Sidecar AI] Injecting into dropdown inside chat for: ${addon.name}`);
+            const success = this.resultFormatter.injectIntoDropdown(addon, formatted, messageId);
             if (!success) {
                 console.error(`[Sidecar AI] Failed to inject result into dropdown for: ${addon.name}`);
             }
