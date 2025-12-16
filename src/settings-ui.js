@@ -17,14 +17,9 @@ export class SettingsUI {
     }
 
     initDrawer() {
-        // Handle drawer toggle - use instant toggle instead of animation for better performance
-        $('#sidecar_ai_settings .inline-drawer-toggle').off('click').on('click', function () {
-            const content = $(this).next('.inline-drawer-content');
-            const icon = $(this).find('.inline-drawer-icon');
-            const isVisible = content.is(':visible');
-            content.toggle(!isVisible);
-            icon.toggleClass('down', !isVisible);
-        });
+        // Let SillyTavern handle drawer toggle natively - don't interfere
+        // Remove any custom handlers that might conflict
+        $('#sidecar_ai_settings .inline-drawer-toggle').off('click.sidecar-custom');
     }
 
     renderAddonsList() {
@@ -95,23 +90,31 @@ export class SettingsUI {
         const self = this;
 
         // Create Sidecar button
-        $(document).off('click', '#sidecar_create_button').on('click', '#sidecar_create_button', function () {
+        $(document).off('click.sidecar', '#sidecar_create_button').on('click.sidecar', '#sidecar_create_button', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
             self.openModal();
         });
 
         // Modal close
-        $(document).off('click', '#add_ons_modal_close, #add_ons_form_cancel').on('click', '#add_ons_modal_close, #add_ons_form_cancel', function () {
+        $(document).off('click.sidecar', '#add_ons_modal_close, #add_ons_form_cancel').on('click.sidecar', '#add_ons_modal_close, #add_ons_form_cancel', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
             self.closeModal();
         });
 
         // Edit button
-        $(document).off('click', '[data-action="edit"]').on('click', '[data-action="edit"]', function () {
+        $(document).off('click.sidecar', '[data-action="edit"]').on('click.sidecar', '[data-action="edit"]', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
             const addonId = $(this).data('addon-id');
             self.openModal(addonId);
         });
 
         // Delete button
-        $(document).off('click', '[data-action="delete"]').on('click', '[data-action="delete"]', function () {
+        $(document).off('click.sidecar', '[data-action="delete"]').on('click.sidecar', '[data-action="delete"]', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
             const addonId = $(this).data('addon-id');
             if (confirm('Are you sure you want to delete this Sidecar?')) {
                 self.deleteAddon(addonId);
@@ -119,19 +122,23 @@ export class SettingsUI {
         });
 
         // Enable toggle
-        $(document).off('change', '.add_ons_enable_toggle').on('change', '.add_ons_enable_toggle', function () {
+        $(document).off('change.sidecar', '.add_ons_enable_toggle').on('change.sidecar', '.add_ons_enable_toggle', function (e) {
+            e.stopPropagation();
             const addonId = $(this).data('addon-id');
             const enabled = $(this).is(':checked');
             self.toggleAddon(addonId, enabled);
         });
 
         // Save form
-        $(document).off('click', '#add_ons_form_save').on('click', '#add_ons_form_save', function () {
+        $(document).off('click.sidecar', '#add_ons_form_save').on('click.sidecar', '#add_ons_form_save', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
             self.saveAddon();
         });
 
-        // Response location hint
-        $(document).off('change', '#add_ons_form_response_location').on('change', '#add_ons_form_response_location', function () {
+        // Response location hint - prevent event bubbling
+        $(document).off('change.sidecar', '#add_ons_form_response_location').on('change.sidecar', '#add_ons_form_response_location', function (e) {
+            e.stopPropagation();
             const location = $(this).val();
             const hint = $('#add_ons_response_location_hint');
             if (location === 'chatHistory') {
@@ -139,6 +146,11 @@ export class SettingsUI {
             } else {
                 hint.text('Results appear in expandable dropdown below chat area');
             }
+        });
+
+        // Prevent select dropdowns from being interfered with
+        $(document).off('click.sidecar', '.add_ons_modal select').on('click.sidecar', '.add_ons_modal select', function (e) {
+            e.stopPropagation();
         });
     }
 

@@ -151,7 +151,7 @@
 
 .add_ons_modal_content {
     background: var(--SmartThemeBodyColor) !important;
-    color: inherit !important;
+    color: var(--SmartThemeBodyColor) !important;
     border: 1px solid var(--SmartThemeBorderColor);
     border-radius: 10px;
     width: 90%;
@@ -160,6 +160,12 @@
     display: flex;
     flex-direction: column;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+}
+
+.add_ons_modal_content,
+.add_ons_modal_content * {
+    background-color: var(--SmartThemeBodyColor) !important;
+    color: var(--SmartThemeBodyColor) !important;
 }
 
 .add_ons_modal_header h3 {
@@ -218,7 +224,12 @@
     margin-bottom: 5px;
     font-weight: bold;
     font-size: 0.9em;
-    color: inherit !important;
+    color: var(--SmartThemeBodyColor) !important;
+}
+
+.add_ons_form_hint {
+    color: var(--SmartThemeBodyColor) !important;
+    opacity: 0.7;
 }
 
 /* Fallback for text_pole if not available - Scoped */
@@ -227,10 +238,27 @@
     width: 100%;
     padding: 8px;
     box-sizing: border-box;
-    background-color: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.1)) !important;
+    background-color: var(--SmartThemeBlurTintColor, rgba(0, 0, 0, 0.3)) !important;
     border: 1px solid var(--SmartThemeBorderColor, #ccc) !important;
-    color: inherit !important;
+    color: var(--SmartThemeBodyColor) !important;
     border-radius: 4px;
+}
+
+/* Select dropdowns - prevent interference */
+.add_ons_modal select.text_pole {
+    cursor: pointer;
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23fff' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 30px;
+}
+
+.add_ons_modal select.text_pole:focus {
+    outline: none;
+    border-color: var(--SmartThemeEmColor, #9fc) !important;
 }
 
 #sidecar_ai_settings .text_pole:focus,
@@ -269,9 +297,9 @@
 #sidecar_ai_settings .menu_button,
 .add_ons_modal .menu_button {
     padding: 8px 16px;
-    border: 1px solid var(--SmartThemeBorderColor, #ccc);
-    background: rgba(128, 128, 128, 0.1);
-    color: inherit;
+    border: 1px solid var(--SmartThemeBorderColor, #ccc) !important;
+    background: var(--SmartThemeBlurTintColor, rgba(128, 128, 128, 0.2)) !important;
+    color: var(--SmartThemeBodyColor) !important;
     cursor: pointer;
     border-radius: 4px;
     transition: all 0.2s;
@@ -280,8 +308,9 @@
 
 #sidecar_ai_settings .menu_button:hover,
 .add_ons_modal .menu_button:hover {
-    background: rgba(128, 128, 128, 0.2);
-    border-color: var(--SmartThemeEmColor, #9fc);
+    background: var(--SmartThemeEmColor, rgba(153, 255, 204, 0.2)) !important;
+    border-color: var(--SmartThemeEmColor, #9fc) !important;
+    color: var(--SmartThemeBodyColor) !important;
 }
 
 #sidecar_ai_settings .add_ons_button_danger,
