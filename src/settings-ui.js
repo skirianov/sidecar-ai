@@ -611,7 +611,7 @@ export class SettingsUI {
         $('#add_ons_form_trigger_mode').val(addon.triggerMode);
         $('#add_ons_form_request_mode').val(addon.requestMode);
         $('#add_ons_form_ai_provider').val(addon.aiProvider);
-        
+
         // Handle API key - if addon has one, use it; otherwise check ST's saved key
         if (addon.apiKey && addon.apiKey.trim() !== '') {
             $('#add_ons_form_api_key').val(addon.apiKey);
@@ -622,7 +622,7 @@ export class SettingsUI {
             // Check for ST's saved key
             this.checkAndPrefillAPIKey(addon.aiProvider);
         }
-        
+
         $('#add_ons_form_api_url').val(addon.apiUrl || '');
         $('#add_ons_form_result_format').val(addon.resultFormat);
         $('#add_ons_form_response_location').val(addon.responseLocation);
@@ -668,7 +668,7 @@ export class SettingsUI {
         let apiKey = $('#add_ons_form_api_key').val();
         const apiKeyField = $('#add_ons_form_api_key');
         const isUsingSTKey = apiKeyField.attr('data-using-st-key') === 'true' || apiKey === 'Using saved key from SillyTavern';
-        
+
         // If using ST's saved key, get it from ST settings
         if (isUsingSTKey) {
             if (this.aiClient) {
@@ -758,19 +758,28 @@ export class SettingsUI {
             return;
         }
 
+        // Get form values first
+        const provider = $('#add_ons_form_ai_provider').val();
+        const model = $('#add_ons_form_ai_model').val();
+        const apiUrl = $('#add_ons_form_api_url').val()?.trim() || null;
+
         // Get API key - check if using ST's saved key or user-entered key
-        let apiKey = $('#add_ons_form_api_key').val();
-        const isUsingSTKey = $('#add_ons_form_api_key').attr('data-using-st-key') === 'true';
-        
+        const apiKeyField = $('#add_ons_form_api_key');
+        let apiKey = apiKeyField.val();
+        const isUsingSTKey = apiKeyField.attr('data-using-st-key') === 'true' || 
+                             apiKey === 'Using saved key from SillyTavern';
+
         // If using ST's saved key, get it from ST settings
-        if (isUsingSTKey || apiKey === 'Using saved key from SillyTavern') {
+        if (isUsingSTKey) {
             if (this.aiClient) {
                 apiKey = this.aiClient.getProviderApiKey(provider);
+            } else {
+                apiKey = null;
             }
         } else {
             apiKey = apiKey.trim();
         }
-        
+
         // Validate API key is available
         if (!apiKey || apiKey.trim() === '') {
             alert('API Key is required. Please enter your API key or configure it in SillyTavern\'s API Connection settings.');
@@ -778,10 +787,6 @@ export class SettingsUI {
             this.highlightError('#add_ons_form_api_key');
             return;
         }
-
-        const provider = $('#add_ons_form_ai_provider').val();
-        const model = $('#add_ons_form_ai_model').val();
-        const apiUrl = $('#add_ons_form_api_url').val()?.trim() || null;
 
         // Test connection before saving
         const saveButton = $('#add_ons_form_save');
@@ -811,15 +816,10 @@ export class SettingsUI {
             // Connection test passed, proceed with save
             saveButton.text('Saving...');
 
-            // Determine if we're using ST's key or a custom key
-            const apiKeyField = $('#add_ons_form_api_key');
+            // Get actual API key for saving (reuse isUsingSTKey from above)
             const fieldValue = apiKeyField.val();
-            const isUsingSTKey = apiKeyField.attr('data-using-st-key') === 'true' || 
-                                 fieldValue === 'Using saved key from SillyTavern';
-            
-            // Get actual API key for saving
             let savedApiKey = '';
-            if (!isUsingSTKey && fieldValue && fieldValue.trim() !== '') {
+            if (!isUsingSTKey && fieldValue && fieldValue.trim() !== '' && fieldValue !== 'Using saved key from SillyTavern') {
                 savedApiKey = fieldValue.trim();
             }
             // If using ST key, save empty string (we'll fetch from ST when needed)
