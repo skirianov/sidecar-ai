@@ -152,11 +152,32 @@ async function loadModules() {
             context.extensionSettings = {};
         }
 
-        // Register settings template
-        const settingsTemplate = document.getElementById('add-ons-extension-settings-template');
+        // Ensure extension settings structure exists
+        if (!context.extensionSettings.addOnsExtension) {
+            context.extensionSettings.addOnsExtension = {
+                addons: []
+            };
+        }
+
+        // Register settings template - SillyTavern should auto-detect it
+        // The template ID should match: {extension-folder-name}-settings-template
+        const settingsTemplate = document.getElementById('sidecar-ai-settings-template') ||
+            document.getElementById('add-ons-extension-settings-template');
+
         if (settingsTemplate) {
-            // Settings UI will be rendered by SillyTavern's extension system
             console.log('[Add-Ons Extension] Settings template found');
+
+            // Render settings UI when extension settings panel is opened
+            // SillyTavern will handle rendering, but we can prepare data
+            if (window.addOnsExtension && window.addOnsExtension.getAddonManager) {
+                const addonManager = window.addOnsExtension.getAddonManager();
+                if (addonManager) {
+                    // Data will be passed to template via SillyTavern's rendering system
+                    console.log('[Add-Ons Extension] Add-on manager available for settings UI');
+                }
+            }
+        } else {
+            console.warn('[Add-Ons Extension] Settings template not found. Make sure settings.html is loaded.');
         }
     }
 

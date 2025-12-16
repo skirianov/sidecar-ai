@@ -20,7 +20,11 @@ export class AddonManager {
      */
     async loadAddons() {
         try {
-            const settings = this.context.extensionSettings?.addOnsExtension || {};
+            // Try multiple possible settings paths
+            const settings = this.context.extensionSettings?.addOnsExtension ||
+                this.context.extensionSettings?.sidecarAi ||
+                this.context.extensionSettings?.['sidecar-ai'] ||
+                {};
             this.addons = settings.addons || [];
 
             // Ensure all add-ons have required fields
@@ -44,11 +48,16 @@ export class AddonManager {
                 this.context.extensionSettings = {};
             }
 
+            // Store in multiple locations for compatibility
             if (!this.context.extensionSettings.addOnsExtension) {
                 this.context.extensionSettings.addOnsExtension = {};
             }
+            if (!this.context.extensionSettings.sidecarAi) {
+                this.context.extensionSettings.sidecarAi = {};
+            }
 
             this.context.extensionSettings.addOnsExtension.addons = this.addons;
+            this.context.extensionSettings.sidecarAi.addons = this.addons; // For template access
 
             if (this.context.saveSettingsDebounced) {
                 this.context.saveSettingsDebounced();

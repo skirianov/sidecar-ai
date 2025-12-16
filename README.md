@@ -15,12 +15,25 @@ A SillyTavern extension that allows you to define custom "add-on" prompts (like 
 ## Installation
 
 1. Clone or download this repository
-2. Copy the entire `add-ons-extension` folder into your SillyTavern installation:
+2. Copy the entire extension folder into your SillyTavern installation:
    ```
-   SillyTavern/public/scripts/extensions/add-ons-extension/
+   SillyTavern/public/scripts/extensions/third-party/sidecar-ai/
    ```
-3. Restart SillyTavern or refresh the page
-4. The extension should appear in your Extensions settings
+   **Important**: The folder must be named `sidecar-ai` and placed in the `third-party` directory.
+
+3. Restart SillyTavern (or hard refresh the page with Ctrl+Shift+R / Cmd+Shift+R)
+
+4. **Accessing the Extension**:
+   - Go to **Settings** (gear icon) → **Extensions** tab
+   - Look for **"Add-Ons Extension"** in the extensions list
+   - Click on it to open the settings panel
+   - If you don't see it, check the browser console (F12) for any errors
+
+5. **Troubleshooting**:
+   - Make sure the folder structure is: `public/scripts/extensions/third-party/sidecar-ai/`
+   - Verify `manifest.json`, `index.js`, and `settings.html` are in the root of the folder
+   - Check browser console for `[Add-Ons Extension]` messages
+   - Ensure the extension is enabled in the Extensions list
 
 ## Usage
 

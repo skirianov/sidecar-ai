@@ -1,4 +1,4 @@
-<script id="add-ons-extension-settings-template" type="text/x-handlebars-template">
+<script id="sidecar-ai-settings-template" type="text/x-handlebars-template">
 <div class="add_ons_extension_settings">
     <div class="add_ons_header">
         <h3>Add-Ons Extension Settings</h3>
@@ -179,12 +179,78 @@
 (function() {
     'use strict';
 
-    // Settings UI handler
+        // Settings UI handler
     if (typeof window.addOnsExtensionSettings === 'undefined') {
         window.addOnsExtensionSettings = {
             init: function() {
                 this.bindEvents();
                 this.loadSettings();
+                this.renderAddonsList();
+            },
+
+            renderAddonsList: function() {
+                // Get add-ons from extension
+                const addonManager = window.addOnsExtension?.getAddonManager();
+                if (!addonManager) {
+                    console.warn('[Add-Ons Extension] Add-on manager not available for settings UI');
+                    return;
+                }
+
+                const addons = addonManager.getAllAddons();
+                const listContainer = document.getElementById('add_ons_list');
+                
+                if (!listContainer) {
+                    console.warn('[Add-Ons Extension] Add-ons list container not found');
+                    return;
+                }
+
+                // Clear existing content
+                listContainer.innerHTML = '';
+
+                if (addons.length === 0) {
+                    listContainer.innerHTML = '<div class="add_ons_empty"><p>No add-ons configured. Click "Add New Add-On" to create one.</p></div>';
+                    return;
+                }
+
+                // Render add-ons
+                addons.forEach(addon => {
+                    const item = document.createElement('div');
+                    item.className = 'add_ons_item';
+                    item.setAttribute('data-addon-id', addon.id);
+                    
+                    const enabledBadge = addon.enabled ? 
+                        '<span class="add_ons_badge add_ons_badge_enabled">Enabled</span>' : 
+                        '<span class="add_ons_badge add_ons_badge_disabled">Disabled</span>';
+                    
+                    item.innerHTML = `
+                        <div class="add_ons_item_header">
+                            <div class="add_ons_item_info">
+                                <h4>${addon.name || 'Unnamed Add-On'}</h4>
+                                <span class="add_ons_item_meta">
+                                    ${enabledBadge}
+                                    <span class="add_ons_badge">${addon.triggerMode || 'auto'}</span>
+                                    <span class="add_ons_badge">${addon.requestMode || 'standalone'}</span>
+                                    <span class="add_ons_badge">${addon.responseLocation || 'outsideChatlog'}</span>
+                                </span>
+                            </div>
+                            <div class="add_ons_item_actions">
+                                <label class="add_ons_toggle">
+                                    <input type="checkbox" ${addon.enabled ? 'checked' : ''} data-addon-id="${addon.id}" class="add_ons_enable_toggle">
+                                    <span class="add_ons_toggle_slider"></span>
+                                </label>
+                                <button class="add_ons_button add_ons_button_small" data-action="edit" data-addon-id="${addon.id}">
+                                    <i class="fa-solid fa-edit"></i> Edit
+                                </button>
+                                <button class="add_ons_button add_ons_button_small add_ons_button_danger" data-action="delete" data-addon-id="${addon.id}">
+                                    <i class="fa-solid fa-trash"></i> Delete
+                                </button>
+                            </div>
+                        </div>
+                        ${addon.description ? `<p class="add_ons_item_description">${addon.description}</p>` : ''}
+                    `;
+                    
+                    listContainer.appendChild(item);
+                });
             },
 
             bindEvents: function() {
@@ -376,12 +442,16 @@
 
             refreshSettings: function() {
                 // Trigger settings refresh in SillyTavern
-                if (window.getContext && window.getContext().saveSettingsDebounced) {
-                    window.getContext().saveSettingsDebounced();
+                const getContext = window.SillyTavern?.getContext || window.getContext;
+                if (getContext) {
+                    const context = getContext();
+                    if (context && context.saveSettingsDebounced) {
+                        context.saveSettingsDebounced();
+                    }
                 }
                 
-                // Reload page or refresh UI
-                location.reload();
+                // Re-render the list
+                this.renderAddonsList();
             }
         };
 
