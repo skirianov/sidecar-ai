@@ -20,6 +20,52 @@ export class EventHandler {
     }
 
     /**
+     * Resolve SillyTavern event payloads to a chat index + message object.
+     * In SillyTavern, MESSAGE_SENT / MESSAGE_RECEIVED / MESSAGE_SWIPED payload is the chat index (mesid).
+     */
+    resolveMessageRefFromEvent(data) {
+        const chatLog = this.contextBuilder.getChatLog();
+        const ref = { chatIndex: null, message: null };
+
+        // Canonical: numeric chat index
+        if (typeof data === 'number' && Number.isInteger(data)) {
+            ref.chatIndex = data;
+            ref.message = Array.isArray(chatLog) ? (chatLog[data] || null) : null;
+            return ref;
+        }
+
+        // Some emitters may pass the DOM element, or an object containing it.
+        const maybeElement = data?.message && data.message.nodeType === 1 ? data.message : (data?.nodeType === 1 ? data : null);
+        if (maybeElement) {
+            const mesidAttr = maybeElement.getAttribute?.('mesid');
+            const idx = mesidAttr !== null && mesidAttr !== undefined && mesidAttr !== '' && !Number.isNaN(Number(mesidAttr))
+                ? Number(mesidAttr)
+                : null;
+            if (idx !== null && Number.isInteger(idx)) {
+                ref.chatIndex = idx;
+                ref.message = Array.isArray(chatLog) ? (chatLog[idx] || null) : null;
+                return ref;
+            }
+            // If we can't map it, still return the element as message for user/ai detection.
+            ref.message = maybeElement;
+            return ref;
+        }
+
+        // Fallback: try to use provided message object
+        if (data?.message && typeof data.message === 'object') {
+            ref.message = data.message;
+            if (Array.isArray(chatLog)) {
+                const idx = chatLog.indexOf(data.message);
+                if (idx >= 0) ref.chatIndex = idx;
+            }
+            return ref;
+        }
+
+        // Unknown payload; let caller fall back.
+        return ref;
+    }
+
+    /**
      * Register event listeners
      */
     registerListeners() {
@@ -27,8 +73,6 @@ export class EventHandler {
             const { eventSource, event_types } = this.context;
 
             if (eventSource && event_types) {
-                console.log('[Sidecar AI] Available event types:', Object.keys(event_types));
-
                 // Listen for new messages - try multiple event types
                 const messageEvents = [
                     event_types.MESSAGE_RECEIVED,
@@ -41,10 +85,8 @@ export class EventHandler {
 
                 messageEvents.forEach(eventType => {
                     if (eventType) {
-                        console.log(`[Sidecar AI] Registering listener for: ${eventType}`);
                         eventSource.on(eventType, (data) => {
                             try {
-                                console.log(`[Sidecar AI] Event fired: ${eventType}`, data);
                                 // For MESSAGE_SENT, wait a bit to ensure message is in chat array
                                 if (eventType === event_types.MESSAGE_SENT || eventType === 'MESSAGE_SENT') {
                                     setTimeout(() => {
@@ -134,13 +176,11 @@ export class EventHandler {
             this.isProcessing = true;
             console.log('[Sidecar AI] Message received event fired', data);
 
-            // Get current message
-            let message = data?.message;
+            const chatLog = this.contextBuilder.getChatLog();
+            const { chatIndex, message: resolvedMessage } = this.resolveMessageRefFromEvent(data);
 
-            // If data is just an ID (number), try to find it
-            if (!message && typeof data === 'number') {
-                message = this.resultFormatter.findMessageObject(data);
-            }
+            // Get current message (prefer SillyTavern chat index resolution)
+            let message = resolvedMessage || data?.message;
 
             // If message still not found, get the absolute latest message from log
             if (!message) {
@@ -159,14 +199,7 @@ export class EventHandler {
 
             // Check if message is from user
             const isUserMessage = this.isUserMessage(message);
-            console.log('[Sidecar AI] Message type check:', {
-                isUserMessage,
-                messageType: typeof message,
-                hasMes: !!message?.mes,
-                isUser: message?.is_user,
-                role: message?.role,
-                name: message?.name
-            });
+            // (Intentionally low-noise) Message type is determined by ST properties/classes.
 
             if (isUserMessage) {
                 // USER MESSAGE: Check for triggers
@@ -177,17 +210,11 @@ export class EventHandler {
 
                 if (triggerAddons.length > 0) {
                     const messageText = this.getUserMessageText(message);
-                    console.log('[Sidecar AI] Checking triggers for user message:', messageText.substring(0, 50) + '...');
-
                     let queuedCount = 0;
                     triggerAddons.forEach(addon => {
-                        console.log(`[Sidecar AI] Checking addon ${addon.name} triggers:`, addon.triggerConfig);
                         if (this.checkTriggerMatch(messageText, addon.triggerConfig)) {
-                            console.log(`[Sidecar AI] Trigger matched for addon: ${addon.name}`);
                             this.queuedTriggers.add(addon.id);
                             queuedCount++;
-                        } else {
-                            console.log(`[Sidecar AI] No match for addon: ${addon.name}`);
                         }
                     });
 
@@ -203,7 +230,6 @@ export class EventHandler {
 
             // FALLBACK: Check if previous message was a user message and process triggers
             // This handles cases where MESSAGE_SENT event wasn't caught
-            const chatLog = this.contextBuilder.getChatLog();
             if (chatLog && chatLog.length >= 2) {
                 const previousMessage = chatLog[chatLog.length - 2]; // Second-to-last message
                 if (previousMessage && this.isUserMessage(previousMessage)) {
@@ -263,15 +289,15 @@ export class EventHandler {
             // Wait a bit to ensure AI message is fully rendered in DOM
             await new Promise(resolve => setTimeout(resolve, 300));
 
-            // Re-get the latest AI message to ensure we have the correct one
-            const aiMessage = this.getLatestMessage();
+            // Prefer the message referenced by the event payload; fall back to latest AI message.
+            const aiMessage = (!this.isUserMessage(message) && message && typeof message === 'object') ? message : this.getLatestMessage();
             if (!aiMessage) {
                 console.warn('[Sidecar AI] Could not find AI message after delay, skipping');
                 return;
             }
 
             // Avoid processing the same message twice (unless swipe variant changed)
-            const aiMessageId = this.resultFormatter.getMessageId(aiMessage);
+            const aiMessageId = (chatIndex !== null && chatIndex !== undefined) ? chatIndex : this.resultFormatter.getMessageId(aiMessage);
             const aiSwipeId = aiMessage.swipe_id ?? 0;
 
             if (aiMessageId &&
@@ -473,19 +499,23 @@ export class EventHandler {
                 return;
             }
 
-            // Find message object
-            let message = this.resultFormatter.findMessageObject(messageId);
+            // In SillyTavern, messageId is expected to be the chat index (mesid).
+            // Resolve deterministically; avoid retrying against a random latest message.
+            const chatLog = this.contextBuilder.getChatLog();
+            let message = null;
 
-            // If not found by ID (e.g. if messageId is a DOM ID), try to find the message element and map back
-            if (!message) {
-                // Fallback: use the latest AI message if we can't find specific one
-                // This is risky but better than failing if ID mapping fails
-                message = this.getLatestMessage();
-                console.warn(`[Sidecar AI] Could not find message object for ${messageId}, using latest message`);
+            const numericId = (typeof messageId === 'number')
+                ? messageId
+                : (typeof messageId === 'string' && messageId.trim() !== '' && !Number.isNaN(Number(messageId)) ? Number(messageId) : null);
+
+            if (numericId !== null && Array.isArray(chatLog) && numericId >= 0 && numericId < chatLog.length) {
+                message = chatLog[numericId] || null;
+            } else {
+                message = this.resultFormatter.findMessageObject(messageId);
             }
 
             if (!message) {
-                console.error(`[Sidecar AI] No message found for retry`);
+                console.error(`[Sidecar AI] No message found for retry (messageId: ${messageId})`);
                 return;
             }
 
@@ -575,14 +605,9 @@ export class EventHandler {
             console.error('[Sidecar AI] Error processing batch group:', error);
             const messageId = this.resultFormatter.getMessageId(message);
 
-            // Create retry callback for batch
-            const retryCallback = async () => {
-                await this.processBatchGroup(addons, message);
-            };
-
             addons.forEach(addon => {
                 this.resultFormatter.hideLoadingIndicator(messageId, addon);
-                this.resultFormatter.showErrorIndicator(messageId, addon, error, retryCallback);
+                this.resultFormatter.showErrorIndicator(messageId, addon, error);
             });
         }
     }
@@ -628,14 +653,7 @@ export class EventHandler {
             console.error(`[Sidecar AI] Error processing add-on ${addon.name}:`, error);
             const messageId = this.resultFormatter.getMessageId(message);
             this.resultFormatter.hideLoadingIndicator(messageId, addon);
-
-            // Create retry callback
-            const retryCallback = async () => {
-                // Re-process the add-on
-                await this.processStandaloneAddon(addon, message);
-            };
-
-            this.resultFormatter.showErrorIndicator(messageId, addon, error, retryCallback);
+            this.resultFormatter.showErrorIndicator(messageId, addon, error);
         }
     }
 
@@ -663,6 +681,10 @@ export class EventHandler {
 
         // Save metadata for history retrieval (and persistence)
         this.resultFormatter.saveResultToMetadata(message, addon, response);
+
+        // Inline projection (optional): keep message.mes in sync for main AI context visibility.
+        // This is idempotent; if no inline-enabled sidecars exist it will strip/avoid inline region.
+        this.resultFormatter.applyInlineSidecarResultsToMessage(message);
 
         // Trigger debounced save to ensure metadata persists
         this.debouncedSaveChat();

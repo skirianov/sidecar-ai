@@ -14,6 +14,9 @@ export class AIClient {
             maxDelay: 10000, // 10 seconds
             backoffMultiplier: 2
         };
+
+        // Cache for Connection Manager module (optional)
+        this._connectionManagerModule = null;
     }
 
     /**
@@ -34,11 +37,69 @@ export class AIClient {
     }
 
     /**
+     * Best-effort access to SillyTavern's ConnectionManagerRequestService for per-profile requests.
+     * This allows sidecars to use a different configured connection/preset than the main AI.
+     */
+    async getConnectionManagerRequestService() {
+        // 1) If already cached, return it
+        if (this._connectionManagerModule?.ConnectionManagerRequestService) {
+            return this._connectionManagerModule.ConnectionManagerRequestService;
+        }
+
+        // 2) If available globally (unlikely, but cheap to check)
+        if (typeof window !== 'undefined' && window.ConnectionManagerRequestService) {
+            return window.ConnectionManagerRequestService;
+        }
+
+        // 3) Dynamic import from SillyTavern public scripts
+        try {
+            // SillyTavern serves public/scripts as /scripts/...
+            this._connectionManagerModule = await import('/scripts/extensions/shared.js');
+            return this._connectionManagerModule?.ConnectionManagerRequestService || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
      * Send single add-on request to AI using SillyTavern's ChatCompletionService
      * Includes automatic retry with exponential backoff
      */
     async sendToAI(addon, prompt, retryCount = 0) {
         try {
+            // If user selected a Connection Manager profile, route the request through it.
+            // This enables a different connection/preset than the main AI and avoids CORS.
+            if (addon?.connectionProfileId) {
+                const cm = await this.getConnectionManagerRequestService();
+                if (cm && typeof cm.sendRequest === 'function') {
+                    if (retryCount === 0) {
+                        console.log(`[Sidecar AI] Using Connection Manager profile ${addon.connectionProfileId} for ${addon.name}`);
+                    }
+
+                    // For ConnectionManagerRequestService, prompt can be a string or a messages array.
+                    // If our prompt is a string, pass it directly; if it's an array, pass messages.
+                    const promptArg = Array.isArray(prompt) ? prompt : String(prompt || '');
+
+                    const overridePayload = {};
+                    // Allow OpenRouter provider routing (only meaningful if the selected profile maps to OpenRouter source)
+                    if (Array.isArray(addon.serviceProvider) && addon.serviceProvider.length > 0) {
+                        overridePayload.provider = addon.serviceProvider;
+                    }
+
+                    const response = await cm.sendRequest(
+                        addon.connectionProfileId,
+                        promptArg,
+                        4096,
+                        { stream: false, extractData: true, includePreset: true },
+                        overridePayload
+                    );
+
+                    return response?.content || response?.choices?.[0]?.message?.content || String(response);
+                } else {
+                    console.warn('[Sidecar AI] Connection Manager not available; falling back to ChatCompletionService');
+                }
+            }
+
             const provider = addon.aiProvider || 'openai';
             const model = addon.aiModel || 'gpt-3.5-turbo';
             const apiUrl = addon.apiUrl; // Custom endpoint support
@@ -173,6 +234,32 @@ export class AIClient {
     async sendBatchToAI(addons, prompts) {
         if (addons.length === 0) {
             return [];
+        }
+
+        // If using Connection Manager profile, all add-ons must share the same profile.
+        const profileId = addons[0].connectionProfileId || '';
+        if (profileId) {
+            const allSameProfile = addons.every(a => (a.connectionProfileId || '') === profileId);
+            if (!allSameProfile) {
+                throw new Error('Batch add-ons must have the same Connection Profile');
+            }
+
+            const cm = await this.getConnectionManagerRequestService();
+            if (!cm || typeof cm.sendRequest !== 'function') {
+                throw new Error('Connection Manager is not available');
+            }
+
+            const combinedPrompt = prompts.join('\n\n---\n\n');
+            const response = await cm.sendRequest(
+                profileId,
+                combinedPrompt,
+                4096,
+                { stream: false, extractData: true, includePreset: true },
+                {}
+            );
+
+            const content = response?.content || response?.choices?.[0]?.message?.content || String(response);
+            return this.splitBatchResponse(content, addons.length);
         }
 
         // All add-ons in batch must have same provider/model

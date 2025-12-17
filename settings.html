@@ -141,6 +141,18 @@
                     </div>
                 </div>
 
+                <div class="add_ons_form_row" id="add_ons_connection_profile_row">
+                    <div class="add_ons_form_group" style="grid-column: 1 / -1;">
+                        <label for="add_ons_form_connection_profile">Connection Profile (Optional) <i class="fa-solid fa-circle-question" title="Select a SillyTavern Connection Manager profile to use a different connection/preset than the main AI. If set, this Sidecar will use the profile’s model/provider/preset." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
+                        <select id="add_ons_form_connection_profile" name="connectionProfileId" class="text_pole">
+                            <option value="" selected>Use provider/model fields (no profile)</option>
+                        </select>
+                        <small class="add_ons_form_hint" id="add_ons_connection_profile_hint">
+                            Uses Connection Manager profiles (server-side requests, no CORS). Requires the Connection Manager extension to be enabled.
+                        </small>
+                    </div>
+                </div>
+
                 <div class="add_ons_form_row" id="add_ons_service_provider_row" style="display: none;">
                     <div class="add_ons_form_group" style="grid-column: 1 / -1;">
                         <label for="add_ons_form_service_provider">Service Provider (OpenRouter only)</label>
@@ -184,13 +196,27 @@
                     </div>
 
                     <div class="add_ons_form_group">
-                        <label for="add_ons_form_response_location">Response Location * <i class="fa-solid fa-circle-question" title="Where should results appear? Outside Chatlog (recommended): Clean cards below messages. Chat History: Injected into message as HTML comment, visible to main AI." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
+                        <label for="add_ons_form_response_location">Response Location * <i class="fa-solid fa-circle-question" title="Where should results appear in the UI? Outside Chatlog (recommended): Clean cards below messages. Use Inline Mode to make the main AI see sidecar output in context." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
                         <select id="add_ons_form_response_location" name="responseLocation" class="text_pole" required>
                             <option value="outsideChatlog" selected>Outside Chatlog - Clean cards below chat</option>
-                            <option value="chatHistory">Chat History - Main AI can see it</option>
+                            <option value="chatHistory">Chat History (legacy) - Writes into message</option>
                         </select>
                         <small class="add_ons_form_hint" id="add_ons_response_location_hint">
                             Outside: Shows in card below message (clean, doesn't clutter chat)
+                        </small>
+                    </div>
+                </div>
+
+                <div class="add_ons_form_row">
+                    <div class="add_ons_form_group" style="grid-column: 1 / -1;">
+                        <label for="add_ons_form_inline_mode">Inline Mode (Main AI Visibility) <i class="fa-solid fa-circle-question" title="Off: Sidecar results stay in cards/metadata only. Inline: Sidecar results are appended to the AI message content for context (the main AI can see it), while the UI still shows clean cards." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
+                        <select id="add_ons_form_inline_mode" name="inlineMode" class="text_pole" required>
+                            <option value="off" selected>Off - Keep main AI unaware (recommended)</option>
+                            <option value="append">Inline - Append to message for context</option>
+                            <option value="replaceBlock">Inline - Replace inline block (idempotent)</option>
+                        </select>
+                        <small class="add_ons_form_hint" id="add_ons_inline_mode_hint">
+                            Off: Sidecar output is only shown in cards. Inline: Sidecar output is added to the message for context (main AI can see it).
                         </small>
                     </div>
                 </div>

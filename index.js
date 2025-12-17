@@ -190,9 +190,6 @@ async function loadModules() {
         window.addOnsExtensionSettings = settingsUI;
         settingsUI.init();
 
-        // Initialize dropdown UI for outsideChatlog results
-        initializeDropdownUI();
-
         // Add "Run Sidecar" to Extensions menu
         addSidecarToExtensionsMenu(eventHandler);
 
@@ -224,38 +221,8 @@ async function loadModules() {
         // Don't re-throw - SillyTavern extensions should handle errors gracefully
     }
 
-    function initializeDropdownUI() {
-        // Wait for DOM to be ready
-        setTimeout(() => {
-            // Create dropdown container below chat area
-            const chatContainer = document.querySelector('#chat_container') || document.querySelector('.chat_container');
-            if (!chatContainer) {
-                console.warn('[Sidecar AI] Chat container not found, dropdown UI may not work');
-                return;
-            }
-
-            // Avoid duplicating the dropdown container
-            if (document.getElementById('add-ons-dropdown-container')) {
-                console.log('[Sidecar AI] Dropdown UI already initialized');
-                return;
-            }
-
-            // Create dropdown container
-            const dropdownContainer = document.createElement('div');
-            dropdownContainer.id = 'add-ons-dropdown-container';
-            dropdownContainer.className = 'add-ons-dropdown-container';
-
-            // Insert after chat container or at end of parent
-            const parent = chatContainer.parentElement;
-            if (parent) {
-                parent.appendChild(dropdownContainer);
-            } else {
-                document.body.appendChild(dropdownContainer);
-            }
-
-            console.log('[Sidecar AI] Dropdown UI initialized');
-        }, 500);
-    }
+    // Note: Legacy standalone dropdown container removed.
+    // Sidecar cards are injected per-message via ResultFormatter into `.sidecar-container`.
 
     /**
      * Restore blocks from saved metadata when chat loads
@@ -287,10 +254,7 @@ async function loadModules() {
         // Also listen for chat load events if available
         if (context.eventSource && context.event_types) {
             const chatLoadEvents = [
-                context.event_types.CHAT_LOADED,
                 context.event_types.CHAT_CHANGED,
-                'CHAT_LOADED',
-                'CHAT_CHANGED'
             ].filter(Boolean);
 
             chatLoadEvents.forEach(eventType => {

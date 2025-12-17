@@ -232,9 +232,9 @@ export class SettingsUI {
             const location = $(this).val();
             const hint = $('#add_ons_response_location_hint');
             if (location === 'chatHistory') {
-                hint.text('Chat History: Injected as HTML comment inside message (main AI can see it)');
+                hint.text('Chat History (legacy): Writes into the message content. Prefer "Outside Chatlog" + "Inline Mode" for cleaner UI.');
             } else {
-                hint.text('Outside: Shows in card below message (clean, doesn\'t clutter chat)');
+                hint.text('Outside: Shows in a card below the message. Use "Inline Mode" if you want the main AI to see the sidecar output in context.');
             }
         });
 
@@ -347,6 +347,26 @@ export class SettingsUI {
             self.loadModelsForProvider(provider);
             await self.checkAndPrefillAPIKey(provider);
             self.toggleServiceProviderField(provider);
+        });
+
+        // Connection profile change - if selected, it overrides provider/model/preset selection
+        $(document).off('change.sidecar', '#add_ons_form_connection_profile').on('change.sidecar', '#add_ons_form_connection_profile', function (e) {
+            e.stopPropagation();
+            const profileId = $(this).val();
+            const usingProfile = !!profileId;
+
+            // Light UX: disable provider/model fields when a profile is selected (source of truth becomes the profile)
+            $('#add_ons_form_ai_provider').prop('disabled', usingProfile);
+            $('#add_ons_form_ai_model').prop('disabled', usingProfile);
+            $('#add_ons_form_api_url').prop('disabled', usingProfile);
+
+            // Service providers only apply when selecting OpenRouter directly, not via profile
+            if (usingProfile) {
+                $('#add_ons_service_provider_row').hide();
+            } else {
+                const provider = $('#add_ons_form_ai_provider').val();
+                self.toggleServiceProviderField(provider);
+            }
         });
 
         // Test Connection button
@@ -587,6 +607,8 @@ export class SettingsUI {
             $('#add_ons_form_id').val('');
             $('#add_ons_modal_title').text('Create New Sidecar');
             $('#add_ons_form_save').text('Create Sidecar');
+            // Populate connection profiles dropdown (if available)
+            this.loadConnectionProfiles('');
             // Hide trigger config and regex tester
             $('#add_ons_trigger_config_row').hide();
             $('#add_ons_regex_tester_row').hide();
@@ -1316,6 +1338,10 @@ export class SettingsUI {
         $('#add_ons_form_request_mode').val(addon.requestMode);
         $('#add_ons_form_ai_provider').val(addon.aiProvider);
 
+        // Connection profile (optional)
+        this.loadConnectionProfiles(addon.connectionProfileId || '');
+        $('#add_ons_form_connection_profile').val(addon.connectionProfileId || '');
+
         // Handle API key - if addon has one, use it; otherwise check ST's saved key
         if (addon.apiKey && addon.apiKey.trim() !== '') {
             $('#add_ons_form_api_key').val(addon.apiKey);
@@ -1361,6 +1387,7 @@ export class SettingsUI {
         $('#add_ons_form_result_format').val(addon.resultFormat);
         $('#add_ons_form_response_location').val(addon.responseLocation);
         $('#add_ons_form_format_style').val(addon.formatStyle || 'html-css');
+        $('#add_ons_form_inline_mode').val(addon.inlineMode || 'off');
 
         // Load models for provider, then set selected model
         // Pass the model to set so it can be applied after dropdown is populated
@@ -1514,7 +1541,7 @@ export class SettingsUI {
             }
         } else {
             // Check if key exists (without fetching)
-            const hasKey = this.aiClient.hasProviderApiKey(provider);
+            const hasKey = await this.aiClient.hasProviderApiKey(provider);
             if (!hasKey) {
                 alert('No API key found in SillyTavern\'s settings. Please configure it in API Connection settings or enter a key manually.');
                 $('#add_ons_form_api_key').focus();
@@ -1601,6 +1628,63 @@ export class SettingsUI {
         } else {
             serviceProviderRow.hide();
         }
+    }
+
+    /**
+     * Populate Connection Manager profiles dropdown (if available).
+     * Uses ST's extensionSettings.connectionManager.profiles + CONNECT_API_MAP to filter supported profiles.
+     */
+    loadConnectionProfiles(selectedProfileId = '') {
+        const $select = $('#add_ons_form_connection_profile');
+        const $hint = $('#add_ons_connection_profile_hint');
+        const $row = $('#add_ons_connection_profile_row');
+
+        if ($select.length === 0) return;
+
+        // Default option
+        $select.empty();
+        $select.append($('<option></option>').attr('value', '').text('Use provider/model fields (no profile)'));
+
+        const disabledExtensions = this.context?.extensionSettings?.disabledExtensions || [];
+        const cm = this.context?.extensionSettings?.connectionManager;
+        const profiles = cm?.profiles || [];
+
+        const cmEnabled = !disabledExtensions.includes('connection-manager') && Array.isArray(profiles);
+        if (!cmEnabled) {
+            $select.prop('disabled', true);
+            $row.show();
+            $hint.text('Connection Manager is not available (enable the Connection Manager extension in SillyTavern).');
+            $select.val('');
+            return;
+        }
+
+        // Filter to profiles that support chat completions (openai selected + source present)
+        const CONNECT_API_MAP = this.context?.CONNECT_API_MAP || {};
+        const supported = profiles.filter((p) => {
+            const apiMap = CONNECT_API_MAP?.[p?.api];
+            return apiMap?.selected === 'openai' && !!apiMap?.source;
+        });
+
+        supported
+            .slice()
+            .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+            .forEach((p) => {
+                $select.append($('<option></option>').attr('value', p.id).text(p.name || p.id));
+            });
+
+        $select.prop('disabled', false);
+        $row.show();
+        $hint.text(`Found ${supported.length} chat completion profile(s) from Connection Manager.`);
+
+        // Restore selection
+        if (selectedProfileId) {
+            $select.val(selectedProfileId);
+        } else {
+            $select.val('');
+        }
+
+        // Trigger change to apply UI disable/enable logic
+        $select.trigger('change');
     }
 
     /**
@@ -1748,9 +1832,11 @@ export class SettingsUI {
                 apiKey: savedApiKey, // Save empty if using ST key, otherwise save the entered key
                 apiUrl: apiUrl || '', // Optional
                 serviceProvider: serviceProvider, // Array of service providers for OpenRouter
+                connectionProfileId: $('#add_ons_form_connection_profile').val() || '',
                 resultFormat: $('#add_ons_form_result_format').val(),
                 responseLocation: $('#add_ons_form_response_location').val(),
                 formatStyle: $('#add_ons_form_format_style').val() || 'html-css',
+                inlineMode: $('#add_ons_form_inline_mode').val() || 'off',
                 contextSettings: {
                     messagesCount: parseInt($('#add_ons_form_messages_count').val()) || 10,
                     includeCharCard: $('#add_ons_form_include_char_card').is(':checked'),

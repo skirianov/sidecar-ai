@@ -105,6 +105,25 @@ export class ResultFormatter {
         sanitized = sanitized.replace(/^```(?:html|css|xml|markdown)?\s*/g, '');
         sanitized = sanitized.replace(/\s*```$/g, '');
 
+        // Prefer DOM-based sanitization if DOMPurify is available (SillyTavern ships it).
+        // This is much safer than regex-only sanitization.
+        try {
+            const purifier = (typeof window !== 'undefined')
+                ? (window.DOMPurify || window?.SillyTavern?.DOMPurify)
+                : null;
+
+            if (purifier && typeof purifier.sanitize === 'function') {
+                sanitized = purifier.sanitize(sanitized, {
+                    // Keep inline styles, but forbid any global/style/script capability.
+                    FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'base'],
+                    FORBID_ATTR: [/^on/i],
+                    ALLOW_DATA_ATTR: true,
+                });
+            }
+        } catch (e) {
+            // If DOMPurify fails for any reason, fall back to the regex-based hardening below.
+        }
+
         // Remove dangerous position styles that could escape container
         sanitized = sanitized.replace(/position\s*:\s*(fixed|absolute)/gi, 'position: relative');
 
@@ -131,9 +150,12 @@ export class ResultFormatter {
 
         // Remove event handlers
         sanitized = sanitized.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '');
+        // Remove unquoted event handlers (e.g., onclick=alert(1))
+        sanitized = sanitized.replace(/\son\w+\s*=\s*[^>\s]+/gi, '');
 
         // Remove javascript: protocol in links
         sanitized = sanitized.replace(/href\s*=\s*["']javascript:/gi, 'href="#');
+        sanitized = sanitized.replace(/href\s*=\s*javascript:/gi, 'href=#');
 
         // Fix WCAG contrast issues in HTML+CSS content
         sanitized = this.fixWCAGContrast(sanitized);
@@ -350,14 +372,14 @@ export class ResultFormatter {
      */
     showLoadingIndicator(messageId, addon) {
         try {
-            // Always find the latest AI message element, not just any message
-            const messageElement = this.findAIMessageElement();
+            // Prefer attaching to the specific message referenced by SillyTavern (chat index / mesid)
+            const messageElement = this.findMessageElement(messageId) || this.findAIMessageElement();
 
             if (!messageElement) {
                 console.warn(`[Sidecar AI] AI message element not found for loading indicator. Waiting...`);
                 // Retry after a short delay in case the AI message is still rendering
                 setTimeout(() => {
-                    const retryElement = this.findAIMessageElement();
+                    const retryElement = this.findMessageElement(messageId) || this.findAIMessageElement();
                     if (retryElement) {
                         this.attachLoadingToElement(retryElement, addon);
                     } else {
@@ -388,7 +410,7 @@ export class ResultFormatter {
      */
     attachLoadingToElement(messageElement, addon) {
         // Get message ID from the element
-        const elementId = messageElement.id || messageElement.getAttribute('data-message-id') || `msg_${Date.now()}`;
+        const elementId = messageElement.getAttribute('mesid') || messageElement.id || messageElement.getAttribute('data-message-id') || `msg_${Date.now()}`;
 
         // Get or create Sidecar container for this message - check for ANY existing container first
         let sidecarContainer = messageElement.querySelector('.sidecar-container');
@@ -482,24 +504,15 @@ export class ResultFormatter {
      */
     hideLoadingIndicator(messageId, addon) {
         try {
-            // Find loading indicator by addon ID (more reliable than messageId)
-            const loadingDiv = document.querySelector(`.sidecar-loading-${addon.id}`);
+            const messageElement = this.findMessageElement(messageId) || this.findAIMessageElement();
+            const sidecarContainer = messageElement?.querySelector?.('.sidecar-container') || null;
+            const loadingDiv = sidecarContainer?.querySelector?.(`.sidecar-loading-${addon.id}`) ||
+                messageElement?.querySelector?.(`.sidecar-loading-${addon.id}`) ||
+                null;
+
             if (loadingDiv) {
                 console.log(`[Sidecar AI] Removing loading indicator for ${addon.name}`);
                 loadingDiv.remove();
-            } else {
-                // Fallback: try to find in the latest AI message
-                const messageElement = this.findAIMessageElement();
-                if (messageElement) {
-                    const sidecarContainer = messageElement.querySelector(`.sidecar-container`);
-                    if (sidecarContainer) {
-                        const loadingDiv = sidecarContainer.querySelector(`.sidecar-loading-${addon.id}`);
-                        if (loadingDiv) {
-                            console.log(`[Sidecar AI] Removing loading indicator for ${addon.name} from AI message`);
-                            loadingDiv.remove();
-                        }
-                    }
-                }
             }
         } catch (error) {
             console.error(`[Sidecar AI] Error hiding loading indicator:`, error);
@@ -512,8 +525,8 @@ export class ResultFormatter {
      */
     showErrorIndicator(messageId, addon, error) {
         try {
-            // Always find the latest AI message element
-            const messageElement = this.findAIMessageElement();
+            // Prefer attaching to the specific message referenced by SillyTavern (chat index / mesid)
+            const messageElement = this.findMessageElement(messageId) || this.findAIMessageElement();
             if (!messageElement) {
                 console.warn(`[Sidecar AI] AI message element not found for error indicator`);
                 return;
@@ -525,7 +538,8 @@ export class ResultFormatter {
                 return;
             }
 
-            const elementId = messageElement.id || messageElement.getAttribute('data-message-id') || `msg_${Date.now()}`;
+            // messageId is expected to be the SillyTavern chat index (mesid)
+            const elementId = messageElement.getAttribute('mesid') || messageId;
 
             // Get or create container - check for ANY existing container first
             let sidecarContainer = messageElement.querySelector('.sidecar-container');
@@ -601,8 +615,20 @@ export class ResultFormatter {
         try {
             // Use provided messageId or get from latest message
             if (!messageId) {
-                messageId = this.getMessageId(null);
+                // Best-effort fallback: use latest AI message element's mesid or last chat index.
+                const aiEl = this.findAIMessageElement();
+                const mesidAttr = aiEl?.getAttribute?.('mesid');
+                if (mesidAttr !== null && mesidAttr !== undefined && mesidAttr !== '' && !Number.isNaN(Number(mesidAttr))) {
+                    messageId = Number(mesidAttr);
+                } else {
+                    const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+                    messageId = Array.isArray(chatLog) && chatLog.length > 0 ? (chatLog.length - 1) : null;
+                }
             }
+
+            // Resolve swipe id for uniqueness (per-message variant)
+            const messageObjForIds = this.findMessageObject(messageId);
+            const swipeIdForIds = messageObjForIds?.swipe_id ?? 0;
 
             // Use provided element or find it
             const messageElement = existingElement || this.findMessageElement(messageId);
@@ -703,10 +729,9 @@ export class ResultFormatter {
                 copyBtn.onclick = (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    // Get raw content (not HTML)
-                    // We need to retrieve it from metadata or extract text
-                    const content = document.getElementById(`addon-content-${addon.id}`).innerText;
-                    navigator.clipboard.writeText(content).then(() => {
+                    // Scope to this addon section to avoid cross-message collisions.
+                    const contentText = addonSection.querySelector('.addon_result_content')?.innerText || '';
+                    navigator.clipboard.writeText(contentText).then(() => {
                         copyBtn.innerHTML = '<i class="fa-solid fa-check"></i>';
                         setTimeout(() => copyBtn.innerHTML = '<i class="fa-solid fa-copy"></i>', 1000);
                     });
@@ -718,7 +743,7 @@ export class ResultFormatter {
 
                 const content = document.createElement('div');
                 content.className = 'addon_result_content';
-                content.id = `addon-content-${addon.id}`;
+                content.id = `addon-content-${messageId}-${swipeIdForIds}-${addon.id}`;
 
                 addonSection.appendChild(summary);
                 addonSection.appendChild(content);
@@ -765,7 +790,9 @@ export class ResultFormatter {
         const messageElement = this.findMessageElement(messageId);
         if (!messageElement) return;
 
-        const contentDiv = messageElement.querySelector(`#addon-content-${addon.id}`);
+        // Find the specific addon section and its content container (message-scoped).
+        const addonSection = messageElement.querySelector(`.addon_section-${addon.id}`);
+        const contentDiv = addonSection?.querySelector?.('.addon_result_content') || null;
         if (!contentDiv) return;
 
         const resultItem = contentDiv.querySelector('.addon_result_item');
@@ -869,19 +896,26 @@ export class ResultFormatter {
      * Find message object from chat log
      */
     findMessageObject(messageId) {
-        if (!messageId) return null;
+        if (messageId === null || messageId === undefined) return null;
 
         const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
         if (!Array.isArray(chatLog)) return null;
 
-        // Try find by UID/ID/mesId with loose equality to handle string/number differences
-        let message = chatLog.find(msg =>
-            (msg.uid == messageId) ||
-            (msg.id == messageId) ||
-            (msg.mesId == messageId)
-        );
+        // SillyTavern event payloads use chat index (mesid), so treat numeric ids as indices first.
+        const numericId = (typeof messageId === 'number')
+            ? messageId
+            : (typeof messageId === 'string' && messageId.trim() !== '' && !Number.isNaN(Number(messageId)) ? Number(messageId) : null);
 
-        return message;
+        if (numericId !== null && Number.isInteger(numericId) && numericId >= 0 && numericId < chatLog.length) {
+            return chatLog[numericId] || null;
+        }
+
+        // Fallback: Try find by UID/ID/mesId with loose equality to handle string/number differences
+        return chatLog.find(msg =>
+            (msg?.uid == messageId) ||
+            (msg?.id == messageId) ||
+            (msg?.mesId == messageId)
+        ) || null;
     }
 
     /**
@@ -928,7 +962,8 @@ export class ResultFormatter {
                 result: result,
                 addonName: addon.name,
                 timestamp: Date.now(),
-                formatStyle: addon.formatStyle || 'html-css'
+                formatStyle: addon.formatStyle || 'html-css',
+                inlineMode: addon.inlineMode || 'off'
             };
 
             // Also update message.extra for backward compatibility and immediate access
@@ -1000,6 +1035,12 @@ export class ResultFormatter {
             delete message.extra.sidecarResults[addonId];
             console.log(`[Sidecar AI] Deleted result from message.extra`);
 
+            // Also delete from current swipe variant if present
+            const swipeId = message.swipe_id ?? 0;
+            if (Array.isArray(message.swipe_info) && message.swipe_info[swipeId]?.extra?.sidecarResults?.[addonId]) {
+                delete message.swipe_info[swipeId].extra.sidecarResults[addonId];
+            }
+
             // Update DOM if possible
             const messageId = this.getMessageId(message);
             const messageElement = this.findMessageElement(messageId);
@@ -1009,6 +1050,9 @@ export class ResultFormatter {
                     section.remove();
                 }
             }
+
+            // Re-apply inline projection (may remove inline region if this addon was inline).
+            this.applyInlineSidecarResultsToMessage(message);
 
             return true;
         }
@@ -1053,6 +1097,7 @@ export class ResultFormatter {
                 addonName: addon?.name || 'Unknown',
                 timestamp: Date.now(),
                 formatStyle: addon?.formatStyle || 'html-css',
+                inlineMode: addon?.inlineMode || 'off',
                 edited: true
             };
 
@@ -1088,7 +1133,110 @@ export class ResultFormatter {
             }
         }
 
+        // Keep inline projection (main AI visibility) in sync after edits.
+        this.applyInlineSidecarResultsToMessage(message);
+
         return true;
+    }
+
+    /**
+     * Inline mode: project stored sidecarResults into message.mes so the main AI can see it,
+     * while keeping UI clean via message.extra.display_text.
+     *
+     * Source of truth remains metadata in swipe_info[swipeId].extra.sidecarResults.
+     */
+    applyInlineSidecarResultsToMessage(message) {
+        if (!message || typeof message !== 'object') return false;
+
+        try {
+            const messageId = this.getMessageId(message);
+            const swipeId = message.swipe_id ?? 0;
+
+            // Ensure swipe_info structure exists
+            if (!Array.isArray(message.swipe_info)) {
+                message.swipe_info = [];
+            }
+            if (!message.swipe_info[swipeId]) {
+                message.swipe_info[swipeId] = {
+                    send_date: message.send_date,
+                    gen_started: message.gen_started,
+                    gen_finished: message.gen_finished,
+                    extra: {},
+                };
+            }
+            if (!message.swipe_info[swipeId].extra) {
+                message.swipe_info[swipeId].extra = {};
+            }
+
+            const extra = message.swipe_info[swipeId].extra;
+            const sidecarResults = extra.sidecarResults || message.extra?.sidecarResults || {};
+
+            // Helpers
+            const startMarker = '<!-- sidecar-inline:start -->';
+            const endMarker = '<!-- sidecar-inline:end -->';
+            const stripInlineRegion = (text) => {
+                if (typeof text !== 'string') return '';
+                const re = new RegExp(`${startMarker}[\\s\\S]*?${endMarker}\\s*`, 'g');
+                return text.replace(re, '').trimEnd();
+            };
+
+            // Establish base message (without inline region) once per swipe.
+            if (typeof extra.sidecar_inline_base !== 'string' || extra.sidecar_inline_base.length === 0) {
+                const candidate = (Array.isArray(message.swipes) && typeof message.swipes[swipeId] === 'string')
+                    ? message.swipes[swipeId]
+                    : (typeof message.mes === 'string' ? message.mes : '');
+                extra.sidecar_inline_base = stripInlineRegion(candidate);
+            }
+
+            const base = String(extra.sidecar_inline_base || '');
+
+            // Collect inline-enabled results for this swipe variant.
+            const inlineEntries = Object.entries(sidecarResults || {})
+                .map(([id, stored]) => ({ id, stored }))
+                .filter(({ stored }) => stored && typeof stored === 'object' && (stored.inlineMode && stored.inlineMode !== 'off') && typeof stored.result === 'string' && stored.result.length > 0);
+
+            // Build inline region (bounded and replaceable).
+            let inlineRegion = '';
+            if (inlineEntries.length > 0) {
+                // Cap to prevent runaway context growth.
+                const MAX_TOTAL = 20000;
+                const MAX_PER = 8000;
+                let used = 0;
+
+                const parts = [];
+                for (const { id, stored } of inlineEntries) {
+                    if (used >= MAX_TOTAL) break;
+                    const name = stored.addonName || id;
+                    let body = stored.result;
+                    if (body.length > MAX_PER) body = body.slice(0, MAX_PER) + '\n\n[Truncated]';
+                    const block = `\n[Sidecar:${name}]\n${body}\n[/Sidecar:${name}]\n`;
+                    used += block.length;
+                    parts.push(block);
+                }
+
+                inlineRegion = `\n\n${startMarker}\n${parts.join('\n')}\n${endMarker}`;
+            }
+
+            const newMes = (base + inlineRegion).trimEnd();
+            message.mes = newMes;
+            if (Array.isArray(message.swipes) && swipeId >= 0) {
+                message.swipes[swipeId] = newMes;
+            }
+
+            // Keep UI clean: render base text, but keep full text in message.mes for context.
+            extra.display_text = base;
+            if (!message.extra) message.extra = {};
+            message.extra.display_text = base;
+
+            if (typeof this.context?.updateMessageBlock === 'function' && typeof messageId === 'number') {
+                this.context.updateMessageBlock(messageId, message, { rerenderMessage: true });
+            }
+
+            return true;
+        } catch (e) {
+            console.warn('[Sidecar AI] Failed to apply inline sidecar projection:', e);
+            return false;
+        }
     }
 
     /**
@@ -1096,6 +1244,20 @@ export class ResultFormatter {
      * Specifically finds AI messages (not user messages)
      */
     findMessageElement(messageId) {
+        // SillyTavern message DOM blocks are `.mes[mesid="<chatIndex>"]`
+        // and event payloads give us the chat index. Prefer this lookup.
+        const numericId = (typeof messageId === 'number')
+            ? messageId
+            : (typeof messageId === 'string' && messageId.trim() !== '' && !Number.isNaN(Number(messageId)) ? Number(messageId) : null);
+
+        if (numericId !== null) {
+            const byMesId = document.querySelector(`#chat .mes[mesid="${numericId}"]`) ||
+                document.querySelector(`.mes[mesid="${numericId}"]`);
+            if (byMesId && this.isAIMessageElement(byMesId)) {
+                return byMesId;
+            }
+        }
+
         // Try direct ID lookup
         let element = document.getElementById(messageId);
         if (element) {
@@ -1183,14 +1345,24 @@ export class ResultFormatter {
      * Get message ID from message object
      */
     getMessageId(message) {
-        if (!message) {
-            return null;
+        if (message === null || message === undefined) return null;
+
+        // If already a chat index, keep it.
+        if (typeof message === 'number') {
+            return message;
         }
 
-        return message.uid ||
-            message.id ||
-            message.mesId ||
-            `msg_${Date.now()}`;
+        // Prefer SillyTavern chat index, which is stable for a loaded chat.
+        const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+        if (Array.isArray(chatLog)) {
+            const idx = chatLog.indexOf(message);
+            if (idx >= 0) {
+                return idx;
+            }
+        }
+
+        // Fallbacks for compatibility with other sources.
+        return message.uid || message.id || message.mesId || null;
     }
 
     /**
@@ -1456,6 +1628,10 @@ export class ResultFormatter {
                         this.injectIntoDropdown(addon, formatted, messageId, messageElement);
                     }
                 }
+
+                // Ensure inline projection + display_text are consistent after restoration.
+                // This keeps the UI clean even if message.mes contains an inline region.
+                this.applyInlineSidecarResultsToMessage(message);
             }
         } catch (error) {
             console.error('[Sidecar AI] Error handling swipe variant change:', error);
