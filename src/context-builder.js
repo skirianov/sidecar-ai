@@ -9,6 +9,34 @@ export class ContextBuilder {
     }
 
     /**
+     * Heuristic: detect when the user already provided styling/markup directions.
+     * If true, we should NOT “beautify” (avoid adding extra design instructions).
+     */
+    userProvidedStyling(prompt = '') {
+        const p = String(prompt || '');
+        const pl = p.toLowerCase();
+        if (!pl.trim()) return false;
+
+        // Explicit markup / attributes / CSS mentions
+        if (pl.includes('<div') || pl.includes('<span') || pl.includes('<table') || pl.includes('<ul') || pl.includes('<ol') || pl.includes('<details') ||
+            pl.includes('style=') || pl.includes('class=') || pl.includes('<style') || pl.includes('html') || pl.includes('css')) {
+            return true;
+        }
+
+        // Explicit style intent keywords
+        const keywords = [
+            'background', 'background-color', 'color:', 'font', 'padding', 'margin', 'border', 'radius', 'shadow',
+            'layout', 'grid', 'flex', 'typography', 'tailwind', 'bootstrap',
+        ];
+        if (keywords.some(k => pl.includes(k))) return true;
+
+        // Explicit colors
+        if (/(#[0-9a-f]{3,8})\b/i.test(p) || /\brgba?\s*\(/i.test(p)) return true;
+
+        return false;
+    }
+
+    /**
      * Build context for an add-on
      */
     buildContext(addon, chatLog, charData, userData, worldData) {
@@ -46,108 +74,49 @@ export class ContextBuilder {
         const userPrompt = addon.prompt || '';
         const parts = [];
 
-        // CRITICAL: OOC instruction at the very beginning
-        parts.push('[OOC: CRITICAL INSTRUCTION - READ THIS FIRST]');
-        parts.push('You are a task executor. Your ONLY job is to follow the instruction block below.');
-        parts.push('DO NOT continue the story or roleplay.');
-        parts.push('DO NOT generate character dialogue or narrative continuation.');
-        parts.push('IGNORE the chat history for story purposes - it is provided ONLY for context reference.');
-        parts.push('EXECUTE THE INSTRUCTION BLOCK 1:1. Do not add extra features, extra content, or “helpful” extras.');
-        parts.push('If the instruction asks for A, output A. If it does not ask for B, do NOT output B.');
-        parts.push('NEVER continue the story. NEVER “roleplay”. NEVER add narrative.');
-        parts.push('SECURITY/INJECTION RULES (NON‑NEGOTIABLE): No <style> blocks, no external CSS, no <script>, no event handlers (onclick=...), no iframes/embeds/objects. Inline styles ONLY.');
-        parts.push('OUTPUT RULE: Output ONLY the final content. No prefaces, no explanations, no markdown code fences.');
-        parts.push('');
-        parts.push('OUTPUT FORMATTING:');
+        // Minimal contract to reduce instruction interference
+        parts.push('[SYSTEM CONTRACT]');
+        parts.push('- Follow the INSTRUCTION BLOCK exactly. Do not add extra content.');
+        parts.push('- Do NOT roleplay. Do NOT continue the story.');
+        parts.push('- Output ONLY the final requested content (no preface, no explanation, no code fences).');
+        parts.push('- SECURITY: No <script>, no <style>, no external CSS, no iframes/embeds/objects, no event handlers (onclick=...).');
 
         // Add format-specific instructions based on addon.formatStyle
         const formatStyle = addon.formatStyle || 'html-css';
+        const userHasStyling = this.userProvidedStyling(userPrompt);
 
         if (formatStyle === 'html-css') {
-            parts.push('FORMAT: HTML SNIPPET (INLINE STYLES ONLY)');
-            parts.push('- Output valid HTML. Inline styles only. No global CSS.');
-            parts.push('- Prefer a single root <div> wrapper (one top-level element).');
-            parts.push('- Do NOT assume any host app/theme variables exist.');
             parts.push('');
-            parts.push('THEME-SAFE COLOR RULES (DEFAULT BEHAVIOR):');
-            parts.push('- Unless the instruction explicitly asks for specific colors, DO NOT set `color` or `background-color` at all. Let the host theme handle it.');
-            parts.push('- NEVER “invent” light gray text (e.g. #555/#777/#999) for secondary labels. Use smaller font-size / spacing / font-weight instead, while keeping inherited color.');
-            parts.push('- If you must create a surface/card WITHOUT user-specified colors, use neutral translucency that works on both light/dark themes:');
-            parts.push('  - background-color: rgba(127,127,127,0.10)');
-            parts.push('  - border: 1px solid rgba(127,127,127,0.25)');
-            parts.push('  - and keep text color inherited (do not set it).');
-            parts.push('');
-            parts.push('WHEN THE USER SPECIFIES COLORS:');
-            parts.push('- If the instruction specifies exact colors (e.g. “pink background with lime text”), follow EXACTLY. Do not “correct” it.');
-            parts.push('- If the instruction specifies a background but not text color, choose a readable text color (black/white) unless the instruction forbids you from choosing.');
-            parts.push('');
-            parts.push('ACCESSIBILITY (ONLY WHEN REQUESTED):');
-            parts.push('- If (and only if) the instruction requests WCAG/accessibility/contrast, ensure text/background contrast >= 4.5:1.');
-            parts.push('- Do not claim “WCAG compliant” unless you actually followed that requirement.');
-            parts.push('');
-            parts.push('OUTPUT SELF-CHECK (SILENT):');
-            parts.push('- No markdown fences. No commentary.');
-            parts.push('- No global CSS (<style>). No scripts. No event handlers.');
-            parts.push('- If you set a background-color for an element, ensure its text remains readable (either inherit correctly or set an appropriate text color if needed).');
-            parts.push('');
+            parts.push('[FORMAT]');
+            parts.push('- Output HTML only.');
+            parts.push('- One root element (prefer <div>).');
+            parts.push('- Inline styles only. No <style>. No external CSS.');
         } else if (formatStyle === 'xml') {
-            parts.push('FORMAT AS XML:');
-            parts.push('- Output well-formed XML with proper structure.');
-            parts.push('- Use meaningful tag names that describe the content.');
-            parts.push('- Include attributes where appropriate.');
-            parts.push('- Indent nested elements properly.');
-            parts.push('- Example: <response><item id="1">Content</item></response>');
             parts.push('');
+            parts.push('[FORMAT]');
+            parts.push('- Output well-formed XML only.');
         } else if (formatStyle === 'beautify') {
-            parts.push('FORMAT WITH DECORATIVE STYLING:');
-            parts.push('- Use creative formatting with visual elements.');
-            parts.push('- Apply decorative styles like cards, quotes, lists with custom bullets.');
-            parts.push('- Use emojis and symbols sparingly for visual interest.');
-            parts.push('- Structure content with clear visual hierarchy.');
-            parts.push('- Make it visually appealing while maintaining readability.');
             parts.push('');
-            parts.push('THEME-SAFE COLOR RULES (DEFAULT BEHAVIOR):');
-            parts.push('- Unless the instruction explicitly asks for colors, do NOT set `color` or `background-color`. Use layout/spacing/typography to look “app-like”.');
-            parts.push('- If you add decorative containers without user-specified colors, use neutral translucency only (works in light/dark): background-color: rgba(127,127,127,0.10) with border: 1px solid rgba(127,127,127,0.25).');
-            parts.push('- Do NOT use light gray text to imply “muted”. Keep color inherited.');
-            parts.push('');
-            parts.push('WHEN THE USER SPECIFIES COLORS:');
-            parts.push('- Follow EXACTLY. Do not “fix”, do not reinterpret, do not add your own palette.');
-            parts.push('- If the user asks for WCAG/accessibility, then you must ensure contrast >= 4.5:1 (otherwise do not claim it).');
-            parts.push('');
-            parts.push('STYLE CONSISTENCY RULES:');
-            if (context.addonHistory) {
-                parts.push('- IMPORTANT: Review the "Previous Output History" section below to see your past styling choices.');
-                parts.push('- MAINTAIN THE SAME VISUAL STYLE as your previous outputs.');
-                parts.push('- Use the same color schemes, formatting patterns, and decorative elements.');
-                parts.push('- Keep your aesthetic consistent across all responses.');
+            parts.push('[FORMAT]');
+            parts.push('- Output HTML only.');
+            parts.push('- One root element (prefer <div>). Inline styles only. No <style>.');
+            if (userHasStyling) {
+                parts.push('- The instruction includes styling/markup directions: follow them exactly.');
+                parts.push('- Do NOT add extra decorative styling beyond what the instruction asks.');
             } else {
-                parts.push('- Choose a distinctive visual style and remember it for future responses.');
-                parts.push('- Be consistent with your formatting choices (colors, borders, spacing, etc.).');
+                parts.push('- The instruction does NOT specify styling: you MAY make it visually pleasant using simple layout/spacing/typography.');
+                parts.push('- Prefer neutral, theme-safe styling. Avoid hard-coded colors unless asked.');
+                if (context.addonHistory) {
+                    parts.push('- Keep the visual style consistent with previous outputs for this add-on.');
+                }
             }
-            parts.push('');
-            parts.push('AVATAR/IMAGE RULES:');
-            parts.push('- NEVER use placeholder image URLs (placeholder.com, via.placeholder, picsum, etc.).');
-            parts.push('- For avatars: Use emoji avatars (e.g., 🎭, 👤, 🤖) OR initials in colored circles.');
-            parts.push('- Initials example: <div style="width:40px;height:40px;border-radius:50%;background:#5e72e4;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">AB</div>');
-            parts.push('- Choose background colors that have high contrast with white text (dark, saturated colors work best).');
-            parts.push('- Example good contrast: Dark blue (#1e3a8a) background with white (#ffffff) text = PASS.');
-            parts.push('- Example bad contrast: Light gray (#e0e0e0) background with light gray (#aaa) text = FAIL.');
-            parts.push('- Example good contrast: Dark blue (#1e3a8a) background with white (#ffffff) text = PASS.');
-            parts.push('- Example bad contrast: Light gray (#e0e0e0) background with light gray (#aaa) text = FAIL.');
-            parts.push('');
         } else if (formatStyle === 'markdown') {
-            parts.push('FORMAT AS MARKDOWN:');
-            parts.push('- Use clean, standard Markdown formatting.');
-            parts.push('- Use ## or ### for headings.');
-            parts.push('- Use **bold** and *italic* for emphasis.');
-            parts.push('- Use - or * for unordered lists.');
-            parts.push('- Use 1. 2. 3. for ordered lists.');
-            parts.push('- Keep formatting simple and readable.');
             parts.push('');
+            parts.push('[FORMAT]');
+            parts.push('- Output Markdown only. No HTML.');
         }
 
-        parts.push('=== END OOC INSTRUCTION ===');
+        parts.push('[/SYSTEM CONTRACT]');
         parts.push('');
 
         // Always include chat history (controlled by messagesCount)
@@ -189,13 +158,9 @@ export class ContextBuilder {
         // User's instruction (the actual prompt) - THIS IS WHAT TO FOLLOW
         if (userPrompt.trim()) {
             parts.push('');
-            parts.push('═══════════════════════════════════════════════════════════');
-            parts.push('=== INSTRUCTION BLOCK - FOLLOW THIS STRICTLY ===');
-            parts.push('═══════════════════════════════════════════════════════════');
+            parts.push('=== INSTRUCTION BLOCK ===');
             parts.push(userPrompt);
-            parts.push('═══════════════════════════════════════════════════════════');
-            parts.push('');
-            parts.push('[OOC: Remember - ONLY execute the instruction above. Do NOT continue the story.]');
+            parts.push('=== END INSTRUCTION ===');
         }
 
         return parts.join('\n').trim();
