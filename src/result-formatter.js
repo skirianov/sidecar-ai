@@ -399,9 +399,38 @@ export class ResultFormatter {
                 return;
             }
 
+            // If the addon section exists for this message, show loading *inside* the section
+            // to avoid leaving an empty container during regeneration.
+            const existingSection = messageElement.querySelector?.(`.addon_section-${addon.id}`) || null;
+            if (existingSection) {
+                this.setAddonSectionLoading(existingSection, addon);
+                return;
+            }
+
             this.attachLoadingToElement(messageElement, addon);
         } catch (error) {
             console.error(`[Sidecar AI] Error showing loading indicator:`, error);
+        }
+    }
+
+    /**
+     * Put a loading placeholder into an existing addon section content area.
+     * This prevents a blank container during regen.
+     */
+    setAddonSectionLoading(addonSection, addon) {
+        try {
+            if (!addonSection) return;
+            const content = addonSection.querySelector?.('.addon_result_content') || null;
+            if (!content) return;
+            addonSection.open = true;
+            content.innerHTML = `
+                <div class="addon_result_loading">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    <span>Processing ${addon?.name || 'Sidecar'}...</span>
+                </div>
+            `;
+        } catch (e) {
+            // No-op: loading UI is best-effort
         }
     }
 
@@ -513,6 +542,13 @@ export class ResultFormatter {
             if (loadingDiv) {
                 console.log(`[Sidecar AI] Removing loading indicator for ${addon.name}`);
                 loadingDiv.remove();
+            }
+
+            // Also remove any in-section loading placeholder
+            const section = messageElement?.querySelector?.(`.addon_section-${addon.id}`) || null;
+            const inlineLoading = section?.querySelector?.('.addon_result_loading') || null;
+            if (inlineLoading) {
+                inlineLoading.remove();
             }
         } catch (error) {
             console.error(`[Sidecar AI] Error hiding loading indicator:`, error);
@@ -697,11 +733,8 @@ export class ResultFormatter {
                     e.stopPropagation();
                     if (confirm('Are you sure you want to regenerate this result?')) {
                         if (window.addOnsExtension && window.addOnsExtension.retryAddon) {
-                            // Remove existing result to prepare for regeneration
-                            const content = addonSection.querySelector('.addon_result_content');
-                            if (content) {
-                                content.innerHTML = '';
-                            }
+                            // Show loading inside this section to avoid empty container UX.
+                            this.setAddonSectionLoading(addonSection, addon);
                             window.addOnsExtension.retryAddon(addon.id, messageId);
                         }
                     }
