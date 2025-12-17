@@ -70,7 +70,8 @@ export class EventHandler {
      */
     registerListeners() {
         try {
-            const { eventSource, event_types } = this.context;
+            const eventSource = this.context?.eventSource;
+            const event_types = this.context?.event_types || this.context?.eventTypes;
 
             if (eventSource && event_types) {
                 // Listen for new messages - try multiple event types
@@ -101,6 +102,23 @@ export class EventHandler {
                         });
                     }
                 });
+
+                // Reliability fallback: some ST builds/extensions may not emit message_* events consistently.
+                // GENERATION_ENDED is emitted after the AI response is finalized.
+                const generationEndedEvent = event_types.GENERATION_ENDED || 'generation_ended';
+                if (generationEndedEvent) {
+                    eventSource.on(generationEndedEvent, () => {
+                        try {
+                            const chatLog = this.contextBuilder.getChatLog();
+                            if (Array.isArray(chatLog) && chatLog.length > 0) {
+                                // Run against latest message index (mesid)
+                                this.handleMessageReceived(chatLog.length - 1);
+                            }
+                        } catch (e) {
+                            console.error(`[Sidecar AI] Error in ${generationEndedEvent} fallback:`, e);
+                        }
+                    });
+                }
 
                 console.log('[Sidecar AI] Event listeners registered for', messageEvents.length, 'event type(s)');
             } else {
