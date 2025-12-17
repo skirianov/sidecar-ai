@@ -206,8 +206,27 @@ async function loadModules() {
             },
             getAddonManager: () => addonManager,
             getEventHandler: () => eventHandler,
-            getSettingsUI: () => settingsUI
+            getSettingsUI: () => settingsUI,
+            cleanup: () => {
+                // Cleanup all resources
+                if (eventHandler && typeof eventHandler.cleanup === 'function') {
+                    eventHandler.cleanup();
+                }
+                if (aiClient && typeof aiClient.cleanup === 'function') {
+                    aiClient.cleanup();
+                }
+                console.log('[Sidecar AI] Extension cleanup complete');
+            }
         };
+
+        // Register cleanup on extension unload/disable
+        if (typeof window !== 'undefined') {
+            window.addEventListener('beforeunload', () => {
+                if (window.addOnsExtension && typeof window.addOnsExtension.cleanup === 'function') {
+                    window.addOnsExtension.cleanup();
+                }
+            });
+        }
 
         console.log('[Sidecar AI] Initialization complete');
     } catch (error) {

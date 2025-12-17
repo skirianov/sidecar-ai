@@ -17,6 +17,8 @@ export class EventHandler {
         this.lastProcessedMessageId = null;
         this.lastProcessedSwipeId = null;
         this.queuedTriggers = new Set(); // Set of addon IDs queued to run
+        // Performance: Store fallback observer for cleanup
+        this.fallbackObserver = null;
     }
 
     /**
@@ -121,6 +123,11 @@ export class EventHandler {
                 }
 
                 console.log('[Sidecar AI] Event listeners registered for', messageEvents.length, 'event type(s)');
+
+                // Disconnect fallback observer if primary event system is now available
+                if (this.fallbackObserver) {
+                    this.disconnectFallbackObserver();
+                }
             } else {
                 console.warn('[Sidecar AI] Event system not available, using fallback');
                 this.setupFallbackListeners();
@@ -136,6 +143,11 @@ export class EventHandler {
      * Setup fallback listeners (polling or DOM observation)
      */
     setupFallbackListeners() {
+        // Only create if we don't already have one
+        if (this.fallbackObserver) {
+            return;
+        }
+
         console.log('[Sidecar AI] Setting up fallback listeners using MutationObserver');
 
         // Use MutationObserver to watch for new messages
@@ -171,6 +183,9 @@ export class EventHandler {
                 subtree: true
             });
 
+            // Store observer reference for cleanup
+            this.fallbackObserver = observer;
+
             // Initialize message count
             const messages = chatContainer.querySelectorAll('.mes, .message');
             lastMessageCount = messages.length;
@@ -179,6 +194,36 @@ export class EventHandler {
         } else {
             console.warn('[Sidecar AI] Chat container not found for fallback listeners');
         }
+    }
+
+    /**
+     * Disconnect fallback observer to prevent memory leaks
+     */
+    disconnectFallbackObserver() {
+        if (this.fallbackObserver) {
+            this.fallbackObserver.disconnect();
+            this.fallbackObserver = null;
+            console.log('[Sidecar AI] Fallback MutationObserver disconnected');
+        }
+    }
+
+    /**
+     * Cleanup all resources (observers, timeouts, etc.)
+     */
+    cleanup() {
+        // Disconnect fallback observer
+        this.disconnectFallbackObserver();
+
+        // Clear save timeout
+        if (this.saveChatTimeout) {
+            clearTimeout(this.saveChatTimeout);
+            this.saveChatTimeout = null;
+        }
+
+        // Clear queued triggers
+        this.queuedTriggers.clear();
+
+        console.log('[Sidecar AI] EventHandler cleanup complete');
     }
 
     /**
@@ -221,8 +266,9 @@ export class EventHandler {
 
             if (isUserMessage) {
                 // USER MESSAGE: Check for triggers
-                const triggerAddons = this.addonManager.getEnabledAddons()
-                    .filter(addon => addon.triggerMode === 'trigger');
+                // Performance: Single-pass categorization (reuse logic if we already categorized)
+                const enabledAddons = this.addonManager.getEnabledAddons();
+                const triggerAddons = enabledAddons.filter(addon => addon.triggerMode === 'trigger');
 
                 console.log(`[Sidecar AI] Found ${triggerAddons.length} trigger mode sidecar(s)`);
 
@@ -246,20 +292,36 @@ export class EventHandler {
             // AI MESSAGE: Process auto add-ons AND queued triggers
             console.log('[Sidecar AI] Processing add-ons for AI message');
 
+            // Performance: Single-pass categorization instead of multiple filters
+            const enabledAddons = this.addonManager.getEnabledAddons();
+            const categorized = {
+                auto: [],
+                trigger: [],
+                manual: []
+            };
+
+            // Single pass to categorize all enabled addons
+            enabledAddons.forEach(addon => {
+                const mode = addon.triggerMode || 'auto';
+                if (categorized[mode]) {
+                    categorized[mode].push(addon);
+                } else {
+                    categorized.auto.push(addon); // Default fallback
+                }
+            });
+
             // FALLBACK: Check if previous message was a user message and process triggers
             // This handles cases where MESSAGE_SENT event wasn't caught
             if (chatLog && chatLog.length >= 2) {
                 const previousMessage = chatLog[chatLog.length - 2]; // Second-to-last message
                 if (previousMessage && this.isUserMessage(previousMessage)) {
                     console.log('[Sidecar AI] Fallback: Detected user message before AI response, checking triggers');
-                    const triggerAddons = this.addonManager.getEnabledAddons()
-                        .filter(addon => addon.triggerMode === 'trigger');
 
-                    if (triggerAddons.length > 0) {
+                    if (categorized.trigger.length > 0) {
                         const messageText = this.getUserMessageText(previousMessage);
                         console.log('[Sidecar AI] Fallback: Checking triggers for user message:', messageText.substring(0, 50) + '...');
 
-                        triggerAddons.forEach(addon => {
+                        categorized.trigger.forEach(addon => {
                             console.log(`[Sidecar AI] Fallback: Checking addon ${addon.name} triggers:`, addon.triggerConfig);
                             if (this.checkTriggerMatch(messageText, addon.triggerConfig)) {
                                 console.log(`[Sidecar AI] Fallback: Trigger matched for addon: ${addon.name}`);
@@ -272,18 +334,21 @@ export class EventHandler {
                 }
             }
 
-            // 1. Get auto-triggered add-ons
-            const autoAddons = this.addonManager.getEnabledAddons()
-                .filter(addon => addon.triggerMode === 'auto');
+            // 1. Get auto-triggered add-ons (already categorized)
+            const autoAddons = categorized.auto;
 
             // 2. Get queued trigger add-ons
             const queuedAddons = [];
             if (this.queuedTriggers.size > 0) {
                 console.log(`[Sidecar AI] Found ${this.queuedTriggers.size} queued trigger(s)`);
+                // Use a Set for O(1) lookup when checking enabled addons
+                const enabledAddonIds = new Set(enabledAddons.map(a => a.id));
                 this.queuedTriggers.forEach(id => {
-                    const addon = this.addonManager.getAddon(id);
-                    if (addon && addon.enabled) {
-                        queuedAddons.push(addon);
+                    if (enabledAddonIds.has(id)) {
+                        const addon = this.addonManager.getAddon(id);
+                        if (addon && addon.enabled) {
+                            queuedAddons.push(addon);
+                        }
                     }
                 });
                 // Clear queue immediately so we don't re-process if something fails/retries
@@ -293,9 +358,15 @@ export class EventHandler {
             // Combine lists
             const allAddonsToRun = [...autoAddons, ...queuedAddons];
 
-            // Remove duplicates (in case an addon is both auto and triggered?? shouldn't happen but safe)
-            const uniqueAddons = Array.from(new Set(allAddonsToRun.map(a => a.id)))
-                .map(id => allAddonsToRun.find(a => a.id === id));
+            // Remove duplicates using Set (more efficient than Array.from + find)
+            const seenIds = new Set();
+            const uniqueAddons = allAddonsToRun.filter(addon => {
+                if (seenIds.has(addon.id)) {
+                    return false;
+                }
+                seenIds.add(addon.id);
+                return true;
+            });
 
             console.log(`[Sidecar AI] Running ${uniqueAddons.length} sidecar(s) (${autoAddons.length} auto, ${queuedAddons.length} triggered)`);
 
@@ -555,18 +626,26 @@ export class EventHandler {
             return;
         }
 
-        // Group add-ons by request mode
-        const grouped = this.addonManager.getGroupedAddons(addons);
+        // Performance: Start request cycle to cache context lookups
+        this.contextBuilder.startRequestCycle();
 
-        // Process all groups and standalone addons in parallel
-        const promises = [
-            // Process batch groups
-            ...grouped.batch.map(batchGroup => this.processBatchGroup(batchGroup, message)),
-            // Process standalone add-ons
-            ...grouped.standalone.map(addon => this.processStandaloneAddon(addon, message))
-        ];
+        try {
+            // Group add-ons by request mode
+            const grouped = this.addonManager.getGroupedAddons(addons);
 
-        await Promise.all(promises);
+            // Process all groups and standalone addons in parallel
+            const promises = [
+                // Process batch groups
+                ...grouped.batch.map(batchGroup => this.processBatchGroup(batchGroup, message)),
+                // Process standalone add-ons
+                ...grouped.standalone.map(addon => this.processStandaloneAddon(addon, message))
+            ];
+
+            await Promise.all(promises);
+        } finally {
+            // Performance: Clear request cycle cache after processing completes
+            this.contextBuilder.clearRequestCycle();
+        }
     }
 
     /**
@@ -605,7 +684,7 @@ export class EventHandler {
             });
 
             // Send batch request
-            const responses = await this.aiClient.sendBatchToAI(addons, prompts);
+            const responses = await this.aiClient.sendBatchToAI(addons, prompts, messageId);
 
             // Process each response
             for (let i = 0; i < addons.length; i++) {
@@ -659,7 +738,7 @@ export class EventHandler {
             const prompt = this.contextBuilder.buildPrompt(addon, context);
 
             // Send to AI
-            const response = await this.aiClient.sendToAI(addon, prompt);
+            const response = await this.aiClient.sendToAI(addon, prompt, 0, messageId);
 
             // Hide loading and inject result
             this.resultFormatter.hideLoadingIndicator(messageId, addon);

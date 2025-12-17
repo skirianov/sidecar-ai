@@ -6,6 +6,27 @@
 export class ContextBuilder {
     constructor(context) {
         this.context = context;
+        // Performance: Request-scoped cache for context lookups
+        this._requestCache = null;
+    }
+
+    /**
+     * Start a new request cycle (clears previous cache)
+     */
+    startRequestCycle() {
+        this._requestCache = {
+            chatLog: null,
+            charData: null,
+            userData: null,
+            worldData: null
+        };
+    }
+
+    /**
+     * Clear request cache (called after processing completes)
+     */
+    clearRequestCycle() {
+        this._requestCache = null;
     }
 
     /**
@@ -181,18 +202,27 @@ export class ContextBuilder {
 
     /**
      * Get add-on history from chat log metadata
+     * Performance: Early exits, skips user messages immediately
      * Reads from message.extra.sidecarResults
      */
     getAddonHistory(chatLog, addonId, count) {
-        if (!chatLog || !Array.isArray(chatLog) || !addonId) {
+        if (!chatLog || !Array.isArray(chatLog) || !addonId || chatLog.length === 0) {
             return '';
         }
 
+        // Early exit: if chat log is shorter than requested count, limit search
+        const maxSearchLength = Math.min(chatLog.length, count * 3); // Heuristic: check up to 3x requested count
         const history = [];
 
         // Iterate backwards through chat log to find most recent history first
-        for (let i = chatLog.length - 1; i >= 0 && history.length < count; i--) {
+        // Performance: Start from end, skip user messages immediately, exit early when we have enough
+        for (let i = chatLog.length - 1; i >= 0 && history.length < count && (chatLog.length - i) <= maxSearchLength; i--) {
             const msg = chatLog[i];
+
+            // Performance: Skip user messages immediately (they don't have sidecar results)
+            if (msg?.is_user === true) {
+                continue;
+            }
 
             // Try current swipe variant first, then fall back to message.extra
             const swipeId = msg?.swipe_id ?? 0;
@@ -202,10 +232,9 @@ export class ContextBuilder {
                 const stored = sidecarResults[addonId];
                 if (stored.result && stored.result.length > 0 && stored.result.length < 100000) {
                     history.unshift(stored.result);
-                    continue;
+                    // Continue searching even if we found one (we want count results)
                 }
             }
-
         }
 
         if (history.length === 0) {
@@ -375,74 +404,109 @@ export class ContextBuilder {
 
     /**
      * Get chat log from context
+     * Performance: Uses request-scoped cache
      */
     getChatLog() {
+        // Check cache first
+        if (this._requestCache && this._requestCache.chatLog !== null) {
+            return this._requestCache.chatLog;
+        }
+
+        let chatLog = null;
         if (this.context.chat) {
-            return this.context.chat;
+            chatLog = this.context.chat;
+        } else if (this.context.chatLog) {
+            chatLog = this.context.chatLog;
+        } else if (this.context.currentChat) {
+            chatLog = this.context.currentChat;
+        } else {
+            chatLog = [];
         }
 
-        // Try alternative paths
-        if (this.context.chatLog) {
-            return this.context.chatLog;
+        // Cache result
+        if (this._requestCache) {
+            this._requestCache.chatLog = chatLog;
         }
 
-        if (this.context.currentChat) {
-            return this.context.currentChat;
-        }
-
-        return [];
+        return chatLog;
     }
 
     /**
      * Get character data from context
+     * Performance: Uses request-scoped cache
      */
     getCharData() {
+        // Check cache first
+        if (this._requestCache && this._requestCache.charData !== null) {
+            return this._requestCache.charData;
+        }
+
+        let charData = null;
         if (this.context.characters && this.context.characters[this.context.characterId]) {
-            return this.context.characters[this.context.characterId];
+            charData = this.context.characters[this.context.characterId];
+        } else if (this.context.character) {
+            charData = this.context.character;
+        } else if (this.context.currentCharacter) {
+            charData = this.context.currentCharacter;
         }
 
-        if (this.context.character) {
-            return this.context.character;
+        // Cache result
+        if (this._requestCache) {
+            this._requestCache.charData = charData;
         }
 
-        if (this.context.currentCharacter) {
-            return this.context.currentCharacter;
-        }
-
-        return null;
+        return charData;
     }
 
     /**
      * Get user data from context
+     * Performance: Uses request-scoped cache
      */
     getUserData() {
+        // Check cache first
+        if (this._requestCache && this._requestCache.userData !== null) {
+            return this._requestCache.userData;
+        }
+
+        let userData = null;
         if (this.context.user) {
-            return this.context.user;
+            userData = this.context.user;
+        } else if (this.context.userData) {
+            userData = this.context.userData;
         }
 
-        if (this.context.userData) {
-            return this.context.userData;
+        // Cache result
+        if (this._requestCache) {
+            this._requestCache.userData = userData;
         }
 
-        return null;
+        return userData;
     }
 
     /**
      * Get world data from context
+     * Performance: Uses request-scoped cache
      */
     getWorldData() {
+        // Check cache first
+        if (this._requestCache && this._requestCache.worldData !== null) {
+            return this._requestCache.worldData;
+        }
+
+        let worldData = null;
         if (this.context.world) {
-            return this.context.world;
+            worldData = this.context.world;
+        } else if (this.context.worldData) {
+            worldData = this.context.worldData;
+        } else if (this.context.worldInfo) {
+            worldData = this.context.worldInfo;
         }
 
-        if (this.context.worldData) {
-            return this.context.worldData;
+        // Cache result
+        if (this._requestCache) {
+            this._requestCache.worldData = worldData;
         }
 
-        if (this.context.worldInfo) {
-            return this.context.worldInfo;
-        }
-
-        return null;
+        return worldData;
     }
 }

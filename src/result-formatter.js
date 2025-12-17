@@ -10,6 +10,137 @@ export class ResultFormatter {
         this.cachedAIMessageElement = null;
         this.lastMessageCount = 0;
         this.cacheInvalidationTime = 0;
+
+        // Performance: Pre-compile regex patterns for sanitization
+        this._initSanitizationPatterns();
+
+        // Performance: Cache for color parsing results
+        this._colorBrightnessCache = new Map(); // Key: color string, Value: brightness value
+
+        // Performance: DOM query caches
+        this._messageElementCache = new Map(); // Key: messageId (number or string), Value: HTMLElement (weak reference via WeakMap)
+        this._sidecarContainerCache = new Map(); // Key: messageId, Value: HTMLElement
+        this._chatContainerCache = null; // Single element cache
+        this._elementWeakMap = new WeakMap(); // Store messageId -> element mapping for cleanup detection
+        this._cacheInvalidationObserver = null; // MutationObserver for cache invalidation
+        this._setupCacheInvalidation();
+
+        // Performance: Cleanup throttling
+        this._lastCleanupTime = 0;
+        this._cleanupThrottleMs = 5000; // Only run cleanup max once per 5 seconds
+
+        // Performance: Restoration debouncing and processing flag
+        this._restoreBlocksTimeout = null;
+        this._isRestoringBlocks = false;
+    }
+
+    /**
+     * Setup MutationObserver for cache invalidation
+     */
+    _setupCacheInvalidation() {
+        if (typeof window === 'undefined' || typeof MutationObserver === 'undefined') {
+            return;
+        }
+
+        try {
+            // Observe chat container for mutations
+            const chatContainer = document.querySelector('#chat_container') ||
+                document.querySelector('.chat_container') ||
+                document.querySelector('#chat');
+
+            if (chatContainer) {
+                // Debounce invalidation to avoid excessive cache clearing
+                let invalidationTimeout = null;
+                const observer = new MutationObserver(() => {
+                    if (invalidationTimeout) {
+                        clearTimeout(invalidationTimeout);
+                    }
+                    invalidationTimeout = setTimeout(() => {
+                        this._invalidateCache();
+                    }, 100); // Debounce 100ms
+                });
+
+                observer.observe(chatContainer, {
+                    childList: true,
+                    subtree: true,
+                    attributes: true,
+                    attributeFilter: ['mesid', 'data-message-id']
+                });
+
+                this._cacheInvalidationObserver = observer;
+                this._chatContainerCache = chatContainer;
+            }
+        } catch (e) {
+            console.warn('[Sidecar AI] Failed to setup cache invalidation observer:', e);
+        }
+    }
+
+    /**
+     * Invalidate DOM cache (called on mutations or explicitly)
+     */
+    _invalidateCache() {
+        // Verify cached elements are still in DOM and clean up invalid entries
+        const messageIdsToRemove = [];
+        this._messageElementCache.forEach((element, messageId) => {
+            if (!element || !document.contains(element)) {
+                messageIdsToRemove.push(messageId);
+            }
+        });
+        messageIdsToRemove.forEach(id => this._messageElementCache.delete(id));
+
+        // Clean sidecar container cache
+        const containerIdsToRemove = [];
+        this._sidecarContainerCache.forEach((element, messageId) => {
+            if (!element || !document.contains(element)) {
+                containerIdsToRemove.push(messageId);
+            }
+        });
+        containerIdsToRemove.forEach(id => this._sidecarContainerCache.delete(id));
+
+        // Clear chat container cache if invalid
+        if (this._chatContainerCache && !document.contains(this._chatContainerCache)) {
+            this._chatContainerCache = null;
+        }
+
+        // Clear legacy cache
+        if (this.cachedAIMessageElement && !document.contains(this.cachedAIMessageElement)) {
+            this.cachedAIMessageElement = null;
+        }
+
+        // Update message count for legacy cache
+        const messageElements = document.querySelectorAll('.mes, .message');
+        this.lastMessageCount = messageElements.length;
+        this.cacheInvalidationTime = Date.now();
+    }
+
+    /**
+     * Initialize pre-compiled regex patterns for sanitization (called once)
+     */
+    _initSanitizationPatterns() {
+        // Code fence patterns
+        this._codeFenceFull = /^```(?:html|css|xml|markdown)?\s*\n([\s\S]*)\n```\s*$/;
+        this._codeFenceStart = /^```(?:html|css|xml|markdown)?\s*/g;
+        this._codeFenceEnd = /\s*```$/g;
+
+        // Style-related patterns (can be combined)
+        this._positionFixed = /position\s*:\s*(fixed|absolute)/gi;
+        this._zIndex = /z-index\s*:\s*[^;]+;?/gi;
+        this._viewportUnits = /\b\d+v[wh]\b/gi;
+
+        // Tag removal patterns (grouped by type)
+        this._dangerousTagsPaired = /<(iframe|embed|object|script|style)[^>]*>.*?<\/\1>/gis;
+        this._dangerousTagsSelfClosing = /<(iframe|embed|object|script)[^>]*\/>/gi;
+
+        // Link tags (specific pattern)
+        this._stylesheetLink = /<link[^>]*rel\s*=\s*["']stylesheet["'][^>]*>/gi;
+
+        // Event handler patterns
+        this._eventHandlerQuoted = /\son\w+\s*=\s*["'][^"']*["']/gi;
+        this._eventHandlerUnquoted = /\son\w+\s*=\s*[^>\s]+/gi;
+
+        // JavaScript protocol patterns
+        this._javascriptProtocolQuoted = /href\s*=\s*["']javascript:/gi;
+        this._javascriptProtocolUnquoted = /href\s*=\s*javascript:/gi;
     }
 
     /**
@@ -94,220 +225,247 @@ export class ResultFormatter {
 
         let sanitized = response.trim();
 
-        // Remove markdown code fences that wrap the entire response
-        // Matches: ```html\n<content>\n``` or ```\n<content>\n```
-        const codeFenceMatch = sanitized.match(/^```(?:html|css|xml|markdown)?\s*\n([\s\S]*)\n```\s*$/);
+        // Step 1: Remove markdown code fences (handled separately due to multiline nature)
+        const codeFenceMatch = sanitized.match(this._codeFenceFull);
         if (codeFenceMatch) {
             sanitized = codeFenceMatch[1].trim();
         }
-
         // Also handle single-line code fence wrapping (less common)
-        sanitized = sanitized.replace(/^```(?:html|css|xml|markdown)?\s*/g, '');
-        sanitized = sanitized.replace(/\s*```$/g, '');
+        sanitized = sanitized.replace(this._codeFenceStart, '');
+        sanitized = sanitized.replace(this._codeFenceEnd, '');
 
-        // Prefer DOM-based sanitization if DOMPurify is available (SillyTavern ships it).
-        // This is much safer than regex-only sanitization.
+        // Step 2: Prefer DOM-based sanitization if DOMPurify is available (SillyTavern ships it).
+        // This is much safer than regex-only sanitization and handles most dangerous content.
+        let domPurifyUsed = false;
         try {
             const purifier = (typeof window !== 'undefined')
                 ? (window.DOMPurify || window?.SillyTavern?.DOMPurify)
                 : null;
 
             if (purifier && typeof purifier.sanitize === 'function') {
+                const beforeLength = sanitized.length;
                 sanitized = purifier.sanitize(sanitized, {
                     // Keep inline styles, but forbid any global/style/script capability.
                     FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'link', 'meta', 'base'],
                     FORBID_ATTR: [/^on/i],
                     ALLOW_DATA_ATTR: true,
                 });
+                // If DOMPurify removed content, it likely handled dangerous tags already
+                domPurifyUsed = sanitized.length < beforeLength || sanitized !== response;
             }
         } catch (e) {
             // If DOMPurify fails for any reason, fall back to the regex-based hardening below.
         }
 
-        // Remove dangerous position styles that could escape container
-        sanitized = sanitized.replace(/position\s*:\s*(fixed|absolute)/gi, 'position: relative');
+        // Step 3: Remove dangerous tags (grouped operations - DOMPurify should handle most, but we harden)
+        // Only run if DOMPurify didn't remove significant content (heuristic check)
+        if (!domPurifyUsed || sanitized.includes('<script') || sanitized.includes('<iframe')) {
+            // Dangerous paired tags (iframe, embed, object, script, style)
+            sanitized = sanitized.replace(this._dangerousTagsPaired, '');
+            // Self-closing dangerous tags
+            sanitized = sanitized.replace(this._dangerousTagsSelfClosing, '');
+            // Stylesheet links
+            sanitized = sanitized.replace(this._stylesheetLink, '');
+        }
 
-        // Remove z-index that could create stacking issues
-        sanitized = sanitized.replace(/z-index\s*:\s*[^;]+;?/gi, '');
+        // Step 4: Remove event handlers (DOMPurify handles most, but we harden for edge cases)
+        sanitized = sanitized.replace(this._eventHandlerQuoted, '');
+        sanitized = sanitized.replace(this._eventHandlerUnquoted, '');
 
-        // Remove viewport units that could cause overflow
-        sanitized = sanitized.replace(/\b\d+v[wh]\b/gi, '100%');
+        // Step 5: Remove dangerous CSS properties (inline styles need regex handling)
+        sanitized = sanitized.replace(this._positionFixed, 'position: relative');
+        sanitized = sanitized.replace(this._zIndex, '');
+        sanitized = sanitized.replace(this._viewportUnits, '100%');
 
-        // Block iframe/embed/object tags
-        sanitized = sanitized.replace(/<(iframe|embed|object)[^>]*>.*?<\/\1>/gis, '');
-        sanitized = sanitized.replace(/<(iframe|embed|object)[^>]*\/>/gi, '');
+        // Step 6: Remove javascript: protocol in links
+        sanitized = sanitized.replace(this._javascriptProtocolQuoted, 'href="#');
+        sanitized = sanitized.replace(this._javascriptProtocolUnquoted, 'href=#');
 
-        // Remove script tags (should never happen but just in case)
-        sanitized = sanitized.replace(/<script[^>]*>.*?<\/script>/gis, '');
-        sanitized = sanitized.replace(/<script[^>]*\/>/gi, '');
-
-        // Remove style tags that could affect global styles
-        // Keep inline styles but remove style blocks
-        sanitized = sanitized.replace(/<style[^>]*>.*?<\/style>/gis, '');
-
-        // Remove link tags that could load external stylesheets
-        sanitized = sanitized.replace(/<link[^>]*rel\s*=\s*["']stylesheet["'][^>]*>/gi, '');
-
-        // Remove event handlers
-        sanitized = sanitized.replace(/\son\w+\s*=\s*["'][^"']*["']/gi, '');
-        // Remove unquoted event handlers (e.g., onclick=alert(1))
-        sanitized = sanitized.replace(/\son\w+\s*=\s*[^>\s]+/gi, '');
-
-        // Remove javascript: protocol in links
-        sanitized = sanitized.replace(/href\s*=\s*["']javascript:/gi, 'href="#');
-        sanitized = sanitized.replace(/href\s*=\s*javascript:/gi, 'href=#');
-
-        // Fix WCAG contrast issues in HTML+CSS content
+        // Step 7: Fix WCAG contrast issues in HTML+CSS content
         sanitized = this.fixWCAGContrast(sanitized);
 
         return sanitized;
     }
 
     /**
+     * Get brightness from hex color (cached)
+     */
+    _getBrightnessFromHex(hex) {
+        if (!hex) return 0;
+
+        // Check cache first
+        if (this._colorBrightnessCache.has(hex)) {
+            return this._colorBrightnessCache.get(hex);
+        }
+
+        // Remove # if present
+        let hexClean = hex.replace('#', '');
+        // Convert 3-digit to 6-digit
+        if (hexClean.length === 3) {
+            hexClean = hexClean.split('').map(c => c + c).join('');
+        }
+        const r = parseInt(hexClean.substring(0, 2), 16);
+        const g = parseInt(hexClean.substring(2, 4), 16);
+        const b = parseInt(hexClean.substring(4, 6), 16);
+        const brightness = (r + g + b) / 3;
+
+        // Cache result
+        this._colorBrightnessCache.set(hex, brightness);
+        return brightness;
+    }
+
+    /**
      * Fix WCAG contrast issues by replacing low-contrast color combinations
-     * Aggressively detects and fixes white-on-white and other bad combinations
+     * Optimized: extracts style attributes first, batch processes, caches color parsing
      */
     fixWCAGContrast(html) {
         if (!html || typeof html !== 'string') {
             return html;
         }
 
-        let fixed = html;
+        // Step 1: Extract all style attributes in a single pass
+        const styleAttrPattern = /style\s*=\s*["']([^"']*)["']/gi;
+        const styleMatches = [];
+        let match;
+        let lastIndex = 0;
 
-        // Helper function to get brightness from hex color
-        const getBrightness = (hex) => {
-            if (!hex) return 0;
-            // Remove # if present
-            hex = hex.replace('#', '');
-            // Convert 3-digit to 6-digit
-            if (hex.length === 3) {
-                hex = hex.split('').map(c => c + c).join('');
-            }
-            const r = parseInt(hex.substring(0, 2), 16);
-            const g = parseInt(hex.substring(2, 4), 16);
-            const b = parseInt(hex.substring(4, 6), 16);
-            return (r + g + b) / 3;
-        };
+        // Reset regex lastIndex
+        styleAttrPattern.lastIndex = 0;
 
-        // Helper function to check if color is white/very light
-        const isWhiteOrVeryLight = (colorStr) => {
-            if (!colorStr) return false;
-            const normalized = colorStr.toLowerCase().trim();
-            // Check for white keywords
-            if (normalized === 'white' || normalized === '#fff' || normalized === '#ffffff') {
-                return true;
-            }
-            // Check for rgb(255,255,255) or rgba(255,255,255,...)
-            if (/rgba?\(\s*255\s*,\s*255\s*,\s*255/i.test(colorStr)) {
-                return true;
-            }
-            // Check hex brightness
-            const hexMatch = colorStr.match(/#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})/);
-            if (hexMatch) {
-                const brightness = getBrightness(hexMatch[0]);
-                return brightness > 240; // Very light (almost white)
-            }
-            return false;
-        };
+        while ((match = styleAttrPattern.exec(html)) !== null) {
+            styleMatches.push({
+                fullMatch: match[0],
+                styles: match[1],
+                index: match.index,
+                endIndex: match.index + match[0].length
+            });
+        }
 
-        // Helper function to check if color is dark
-        const isDark = (colorStr) => {
-            if (!colorStr) return false;
-            const hexMatch = colorStr.match(/#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})/);
-            if (hexMatch) {
-                const brightness = getBrightness(hexMatch[0]);
-                return brightness < 85;
-            }
-            // Check for black keywords
-            const normalized = colorStr.toLowerCase().trim();
-            if (normalized === 'black' || normalized === '#000' || normalized === '#000000') {
-                return true;
-            }
-            return false;
-        };
+        // If no style attributes found, return early
+        if (styleMatches.length === 0) {
+            return html;
+        }
 
-        // Helper function to check if background is light
-        const isLightBackground = (bgStr) => {
-            if (!bgStr) return false;
-            const normalized = bgStr.toLowerCase().trim();
-            // Check for white/light keywords
-            if (normalized === 'white' || normalized === '#fff' || normalized === '#ffffff' ||
-                normalized === '#f5f5f5' || normalized === '#f0f0f0' || normalized === '#e8e8e8' ||
-                normalized === '#e3f2fd' || normalized === '#fff3cd') {
-                return true;
-            }
-            // Check for rgb/rgba with high values
-            const rgbMatch = bgStr.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-            if (rgbMatch) {
-                const r = parseInt(rgbMatch[1]);
-                const g = parseInt(rgbMatch[2]);
-                const b = parseInt(rgbMatch[3]);
-                const brightness = (r + g + b) / 3;
-                return brightness > 200; // Light background
-            }
-            // Check hex brightness
-            const hexMatch = bgStr.match(/#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})/);
-            if (hexMatch) {
-                const brightness = getBrightness(hexMatch[0]);
-                return brightness > 200; // Light background
-            }
-            return false;
-        };
+        // Step 2: Process all style attributes
+        const processedStyles = [];
+        const bgPattern = /background(?:-color)?\s*:\s*([^;]+)/i;
+        const colorPattern = /color\s*:\s*([^;]+)/i;
+        const rgbPattern = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i;
+        const hexPattern = /#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})/;
 
-        // Contrast fixer (minimal): only fix when BOTH background and color are set
-        // in the same inline style attribute and are obviously unreadable.
-        fixed = fixed.replace(/style\s*=\s*["']([^"']*)["']/gi, (match, styles) => {
-            let newStyles = styles;
+        for (const styleMatch of styleMatches) {
+            let newStyles = styleMatch.styles;
             let modified = false;
 
-            // Extract background color
-            const bgMatch = styles.match(/background(?:-color)?\s*:\s*([^;]+)/i);
+            // Extract background and text color
+            const bgMatch = styleMatch.styles.match(bgPattern);
+            const colorMatch = styleMatch.styles.match(colorPattern);
             const bgColor = bgMatch ? bgMatch[1].trim() : null;
-
-            // Extract text color
-            const colorMatch = styles.match(/color\s*:\s*([^;]+)/i);
             const textColor = colorMatch ? colorMatch[1].trim() : null;
 
-            // Check if background is light
-            const hasLightBg = bgColor ? isLightBackground(bgColor) : false;
+            if (!bgColor && !textColor) {
+                processedStyles.push(styleMatch.fullMatch);
+                continue;
+            }
 
-            // Check if text is white/light
-            const hasWhiteText = textColor ? isWhiteOrVeryLight(textColor) : false;
+            // Check background lightness (cached parsing)
+            let hasLightBg = false;
+            let hasDarkBg = false;
 
-            // Only fix if BOTH bg and color exist.
-            // If bg is light and text is also very light, make text dark.
-            if (hasLightBg && textColor && hasWhiteText) {
-                newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #111111');
-                modified = true;
-            } else if (hasLightBg && textColor) {
-                const hexMatch = textColor.match(/#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})/);
-                if (hexMatch) {
-                    const brightness = getBrightness(hexMatch[0]);
-                    if (brightness > 200) {
+            if (bgColor) {
+                const normalized = bgColor.toLowerCase().trim();
+                // Quick keyword checks
+                if (normalized === 'white' || normalized === '#fff' || normalized === '#ffffff' ||
+                    normalized === '#f5f5f5' || normalized === '#f0f0f0' || normalized === '#e8e8e8' ||
+                    normalized === '#e3f2fd' || normalized === '#fff3cd') {
+                    hasLightBg = true;
+                } else {
+                    // Check RGB
+                    const rgbMatch = bgColor.match(rgbPattern);
+                    if (rgbMatch) {
+                        const brightness = (parseInt(rgbMatch[1]) + parseInt(rgbMatch[2]) + parseInt(rgbMatch[3])) / 3;
+                        hasLightBg = brightness > 200;
+                        hasDarkBg = brightness < 85;
+                    } else {
+                        // Check hex
+                        const hexMatch = bgColor.match(hexPattern);
+                        if (hexMatch) {
+                            const brightness = this._getBrightnessFromHex(hexMatch[0]);
+                            hasLightBg = brightness > 200;
+                            hasDarkBg = brightness < 85;
+                        }
+                    }
+                }
+            }
+
+            // Check text color and fix contrast issues
+            if (textColor) {
+                const normalized = textColor.toLowerCase().trim();
+                let textBrightness = null;
+                let isWhite = false;
+
+                // Quick keyword checks
+                if (normalized === 'white' || normalized === '#fff' || normalized === '#ffffff') {
+                    isWhite = true;
+                    textBrightness = 255;
+                } else if (normalized === 'black' || normalized === '#000' || normalized === '#000000') {
+                    textBrightness = 0;
+                } else if (/rgba?\(\s*255\s*,\s*255\s*,\s*255/i.test(textColor)) {
+                    isWhite = true;
+                    textBrightness = 255;
+                } else {
+                    // Parse hex or RGB
+                    const hexMatch = textColor.match(hexPattern);
+                    if (hexMatch) {
+                        textBrightness = this._getBrightnessFromHex(hexMatch[0]);
+                    } else {
+                        const rgbMatch = textColor.match(rgbPattern);
+                        if (rgbMatch) {
+                            textBrightness = (parseInt(rgbMatch[1]) + parseInt(rgbMatch[2]) + parseInt(rgbMatch[3])) / 3;
+                        }
+                    }
+                }
+
+                // Fix contrast issues
+                if (hasLightBg) {
+                    if (isWhite || (textBrightness !== null && textBrightness > 200)) {
                         newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #111111');
                         modified = true;
                     }
+                } else if (hasDarkBg && textBrightness !== null && textBrightness < 85) {
+                    newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #ffffff');
+                    modified = true;
                 }
             }
 
-            // Check if background is dark
-            const hasDarkBg = bgColor ? isDark(bgColor) : false;
-            // If dark background but dark text, force light
-            if (hasDarkBg && textColor) {
-                const hexMatch = textColor.match(/#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})/);
-                if (hexMatch) {
-                    const brightness = getBrightness(hexMatch[0]);
-                    if (brightness < 85) {
-                        newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #ffffff');
-                        modified = true;
-                    }
-                }
+            // Store processed style attribute
+            if (modified) {
+                const quote = styleMatch.fullMatch.includes('"') ? '"' : "'";
+                processedStyles.push(`style=${quote}${newStyles}${quote}`);
+            } else {
+                processedStyles.push(styleMatch.fullMatch);
             }
+        }
 
-            return modified ? match.replace(styles, newStyles) : match;
-        });
+        // Step 3: Rebuild HTML string with processed styles
+        if (styleMatches.length > 0) {
+            let result = '';
+            let lastEnd = 0;
 
-        return fixed;
+            for (let i = 0; i < styleMatches.length; i++) {
+                const styleMatch = styleMatches[i];
+                // Add text before this match
+                result += html.substring(lastEnd, styleMatch.index);
+                // Add processed style
+                result += processedStyles[i];
+                lastEnd = styleMatch.endIndex;
+            }
+            // Add remaining text
+            result += html.substring(lastEnd);
+            return result;
+        }
+
+        return html;
     }
 
     /**
@@ -482,12 +640,34 @@ export class ResultFormatter {
     }
 
     /**
+     * Get or cache chat container
+     */
+    _getChatContainer() {
+        if (this._chatContainerCache && document.contains(this._chatContainerCache)) {
+            return this._chatContainerCache;
+        }
+
+        const container = document.querySelector('#chat_container') ||
+            document.querySelector('.chat_container') ||
+            document.querySelector('#chat');
+
+        if (container) {
+            this._chatContainerCache = container;
+        }
+
+        return container;
+    }
+
+    /**
      * Find the latest AI message element in the DOM
      * Performance: Uses caching to avoid repeated DOM queries
      */
     findAIMessageElement() {
-        // Get current message count
-        const messageElements = document.querySelectorAll('.mes, .message');
+        // Get current message count (use cached chat container if available)
+        const chatContainer = this._getChatContainer();
+        const messageElements = chatContainer
+            ? chatContainer.querySelectorAll('.mes, .message')
+            : document.querySelectorAll('.mes, .message');
         const currentCount = messageElements.length;
 
         // Return cached element if message count unchanged and cache is recent (< 2 seconds)
@@ -674,31 +854,44 @@ export class ResultFormatter {
                 return false;
             }
 
-            // Get or create Sidecar container for this message - check BOTH class patterns
-            let sidecarContainer = messageElement.querySelector(`.sidecar-container-${messageId}`) ||
-                messageElement.querySelector('.sidecar-container');
-
-            if (!sidecarContainer) {
-                sidecarContainer = document.createElement('div');
-                sidecarContainer.className = `sidecar-container sidecar-container-${messageId}`;
-
-                // Insert after message content
-                const messageContent = messageElement.querySelector('.mes_text') ||
-                    messageElement.querySelector('.message') ||
-                    messageElement;
-                if (messageContent.nextSibling) {
-                    messageContent.parentElement.insertBefore(sidecarContainer, messageContent.nextSibling);
-                } else {
-                    messageElement.appendChild(sidecarContainer);
-                }
-
-                // Mark as recently restored to protect from cleanup
-                this.markContainerAsRestored(sidecarContainer);
-            } else {
-                // Also mark existing containers as restored when updating
+            // Performance: Check cache for sidecar container
+            let sidecarContainer = this._sidecarContainerCache.get(messageId);
+            if (sidecarContainer && document.contains(sidecarContainer)) {
+                // Container exists and is valid
                 if (sidecarContainer.style.display === 'none') {
                     sidecarContainer.style.display = '';
                 }
+                this.markContainerAsRestored(sidecarContainer);
+            } else {
+                // Cache miss or invalid - query DOM
+                sidecarContainer = messageElement.querySelector(`.sidecar-container-${messageId}`) ||
+                    messageElement.querySelector('.sidecar-container');
+
+                if (!sidecarContainer) {
+                    sidecarContainer = document.createElement('div');
+                    sidecarContainer.className = `sidecar-container sidecar-container-${messageId}`;
+
+                    // Insert after message content
+                    const messageContent = messageElement.querySelector('.mes_text') ||
+                        messageElement.querySelector('.message') ||
+                        messageElement;
+                    if (messageContent.nextSibling) {
+                        messageContent.parentElement.insertBefore(sidecarContainer, messageContent.nextSibling);
+                    } else {
+                        messageElement.appendChild(sidecarContainer);
+                    }
+
+                    // Cache the new container
+                    this._sidecarContainerCache.set(messageId, sidecarContainer);
+                } else {
+                    // Cache the found container
+                    this._sidecarContainerCache.set(messageId, sidecarContainer);
+                    if (sidecarContainer.style.display === 'none') {
+                        sidecarContainer.style.display = '';
+                    }
+                }
+
+                // Mark as recently restored to protect from cleanup
                 this.markContainerAsRestored(sidecarContainer);
             }
 
@@ -1277,32 +1470,46 @@ export class ResultFormatter {
      * Specifically finds AI messages (not user messages)
      */
     findMessageElement(messageId) {
+        // Check cache first
+        const cacheKey = (typeof messageId === 'number' || (typeof messageId === 'string' && !Number.isNaN(Number(messageId))))
+            ? Number(messageId)
+            : messageId;
+
+        const cachedElement = this._messageElementCache.get(cacheKey);
+        if (cachedElement && document.contains(cachedElement) && this.isAIMessageElement(cachedElement)) {
+            return cachedElement;
+        }
+
+        // Cache miss - perform lookup
         // SillyTavern message DOM blocks are `.mes[mesid="<chatIndex>"]`
         // and event payloads give us the chat index. Prefer this lookup.
         const numericId = (typeof messageId === 'number')
             ? messageId
             : (typeof messageId === 'string' && messageId.trim() !== '' && !Number.isNaN(Number(messageId)) ? Number(messageId) : null);
 
+        let element = null;
+
         if (numericId !== null) {
-            const byMesId = document.querySelector(`#chat .mes[mesid="${numericId}"]`) ||
+            element = document.querySelector(`#chat .mes[mesid="${numericId}"]`) ||
                 document.querySelector(`.mes[mesid="${numericId}"]`);
-            if (byMesId && this.isAIMessageElement(byMesId)) {
-                return byMesId;
+            if (element && this.isAIMessageElement(element)) {
+                // Cache result
+                this._messageElementCache.set(cacheKey, element);
+                return element;
             }
         }
 
         // Try direct ID lookup
-        let element = document.getElementById(messageId);
-        if (element) {
-            // Verify it's an AI message
-            if (this.isAIMessageElement(element)) {
-                return element;
-            }
+        element = document.getElementById(messageId);
+        if (element && this.isAIMessageElement(element)) {
+            this._messageElementCache.set(cacheKey, element);
+            return element;
         }
 
         // Try data attribute
         element = document.querySelector(`[data-message-id="${messageId}"]`);
         if (element && this.isAIMessageElement(element)) {
+            this._messageElementCache.set(cacheKey, element);
             return element;
         }
 
@@ -1317,7 +1524,9 @@ export class ResultFormatter {
                 const messageElements = document.querySelectorAll('.mes, .message');
                 for (let i = messageElements.length - 1; i >= 0; i--) {
                     if (this.isAIMessageElement(messageElements[i])) {
-                        return messageElements[i];
+                        element = messageElements[i];
+                        this._messageElementCache.set(cacheKey, element);
+                        return element;
                     }
                 }
             }
@@ -1327,7 +1536,12 @@ export class ResultFormatter {
         const messageElements = document.querySelectorAll('.mes, .message');
         for (let i = messageElements.length - 1; i >= 0; i--) {
             if (this.isAIMessageElement(messageElements[i])) {
-                return messageElements[i];
+                element = messageElements[i];
+                // Only cache if we have a valid messageId
+                if (cacheKey !== undefined && cacheKey !== null) {
+                    this._messageElementCache.set(cacheKey, element);
+                }
+                return element;
             }
         }
 
@@ -1514,42 +1728,104 @@ export class ResultFormatter {
 
     /**
      * Clean up orphaned sidecar containers (containers without a parent message element)
-     * This is a minimal cleanup that only removes truly orphaned containers.
-     * We no longer clean up based on visibility since swipe navigation is handled by events.
+     * Performance: Uses cache and throttling to avoid expensive DOM scans
      */
     cleanupHiddenSidecarCards() {
         try {
-            // Find all sidecar containers
-            const allContainers = document.querySelectorAll('.sidecar-container');
+            // Throttle cleanup - only run max once per 5 seconds
+            const now = Date.now();
+            if (now - this._lastCleanupTime < this._cleanupThrottleMs) {
+                return 0;
+            }
+            this._lastCleanupTime = now;
+
             let cleanedCount = 0;
 
-            allContainers.forEach(container => {
-                // Find the parent message element
-                let messageElement = container.closest('[id^="mes_"], [data-message-id]');
+            // Performance: Use cached containers first, only scan DOM if cache size doesn't match
+            const cachedContainers = Array.from(this._sidecarContainerCache.values()).filter(c => c && document.contains(c));
+            const domContainers = document.querySelectorAll('.sidecar-container');
 
-                // If not found, try to find by traversing up
-                if (!messageElement) {
-                    let parent = container.parentElement;
-                    while (parent && parent !== document.body) {
-                        if (parent.id && parent.id.startsWith('mes_')) {
-                            messageElement = parent;
-                            break;
+            // If cache matches DOM count, only check cached containers (much faster)
+            if (cachedContainers.length === domContainers.length) {
+                // Check only cached containers
+                const containersToCheck = cachedContainers;
+                containersToCheck.forEach(container => {
+                    // Find the parent message element
+                    let messageElement = container.closest('[id^="mes_"], [data-message-id]');
+
+                    // If not found, try to find by traversing up
+                    if (!messageElement) {
+                        let parent = container.parentElement;
+                        while (parent && parent !== document.body) {
+                            if (parent.id && parent.id.startsWith('mes_')) {
+                                messageElement = parent;
+                                break;
+                            }
+                            if (parent.getAttribute('data-message-id')) {
+                                messageElement = parent;
+                                break;
+                            }
+                            parent = parent.parentElement;
                         }
-                        if (parent.getAttribute('data-message-id')) {
-                            messageElement = parent;
-                            break;
-                        }
-                        parent = parent.parentElement;
                     }
-                }
 
-                // Only remove if we can't find the message element (truly orphaned)
-                if (!messageElement) {
-                    container.remove();
-                    cleanedCount++;
-                    console.log(`[Sidecar AI] Cleaned up orphaned sidecar container`);
-                }
-            });
+                    // Only remove if we can't find the message element (truly orphaned)
+                    if (!messageElement) {
+                        container.remove();
+                        cleanedCount++;
+                        // Remove from cache
+                        const messageIdToRemove = Array.from(this._sidecarContainerCache.entries())
+                            .find(([id, elem]) => elem === container)?.[0];
+                        if (messageIdToRemove !== undefined) {
+                            this._sidecarContainerCache.delete(messageIdToRemove);
+                        }
+                    }
+                });
+            } else {
+                // Cache mismatch - need to scan DOM and sync cache
+                const containerSet = new Set(domContainers);
+
+                domContainers.forEach(container => {
+                    // Find the parent message element
+                    let messageElement = container.closest('[id^="mes_"], [data-message-id]');
+
+                    // If not found, try to find by traversing up
+                    if (!messageElement) {
+                        let parent = container.parentElement;
+                        while (parent && parent !== document.body) {
+                            if (parent.id && parent.id.startsWith('mes_')) {
+                                messageElement = parent;
+                                break;
+                            }
+                            if (parent.getAttribute('data-message-id')) {
+                                messageElement = parent;
+                                break;
+                            }
+                            parent = parent.parentElement;
+                        }
+                    }
+
+                    // Only remove if we can't find the message element (truly orphaned)
+                    if (!messageElement) {
+                        container.remove();
+                        cleanedCount++;
+                        containerSet.delete(container);
+                        // Remove from cache
+                        const messageIdToRemove = Array.from(this._sidecarContainerCache.entries())
+                            .find(([id, elem]) => elem === container)?.[0];
+                        if (messageIdToRemove !== undefined) {
+                            this._sidecarContainerCache.delete(messageIdToRemove);
+                        }
+                    }
+                });
+
+                // Clean cache of containers no longer in DOM
+                this._sidecarContainerCache.forEach((container, messageId) => {
+                    if (!containerSet.has(container) || !document.contains(container)) {
+                        this._sidecarContainerCache.delete(messageId);
+                    }
+                });
+            }
 
             if (cleanedCount > 0) {
                 console.log(`[Sidecar AI] Cleaned up ${cleanedCount} orphaned sidecar container(s)`);
@@ -1789,124 +2065,143 @@ export class ResultFormatter {
 
     /**
      * Restore all blocks from saved metadata when chat loads
+     * Performance: Debounced and protected by processing flag
      * Scans chat log and restores UI blocks for all saved results
      * Only restores blocks for currently visible messages
      */
     async restoreBlocksFromMetadata(addonManager) {
-        try {
-            console.log('[Sidecar AI] Restoring blocks from metadata...');
-
-            // Don't cleanup before restoration - let restoration complete first
-            // Cleanup will happen after a delay via periodic cleanup
-
-            const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
-            if (!Array.isArray(chatLog) || chatLog.length === 0) {
-                console.log('[Sidecar AI] No chat log found, skipping restoration');
-                return 0;
+        // Performance: Debounce rapid calls
+        return new Promise((resolve) => {
+            if (this._restoreBlocksTimeout) {
+                clearTimeout(this._restoreBlocksTimeout);
             }
 
-            const allAddons = addonManager.getAllAddons();
-            let restoredCount = 0;
-
-            // Wait a bit for DOM to be ready
-            await new Promise(resolve => setTimeout(resolve, 300));
-
-            // Iterate through all messages in chat log (only AI messages)
-            for (let i = 0; i < chatLog.length; i++) {
-                const message = chatLog[i];
-                if (!message || !message.mes || message.is_user) {
-                    continue; // Skip user messages and empty messages
+            this._restoreBlocksTimeout = setTimeout(async () => {
+                // Performance: Prevent concurrent executions
+                if (this._isRestoringBlocks) {
+                    console.log('[Sidecar AI] Restoration already in progress, skipping...');
+                    resolve(0);
+                    return;
                 }
 
-                const messageId = this.getMessageId(message);
+                try {
+                    this._isRestoringBlocks = true;
+                    console.log('[Sidecar AI] Restoring blocks from metadata...');
 
-                // Find message element
-                const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
-                if (!messageElement) {
-                    continue; // Skip if message element not found
-                }
+                    // Don't cleanup before restoration - let restoration complete first
+                    // Cleanup will happen after a delay via periodic cleanup
 
-                // On first load, restore all messages (cleanup will handle hiding later)
-                // Only skip if message is clearly not in DOM
-                if (!document.contains(messageElement)) {
-                    continue;
-                }
-
-                // Check each add-on for saved results in this message
-                // Check current swipe variant first, then fall back to message.extra
-                const swipeId = message.swipe_id ?? 0;
-                const sidecarResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults || message.extra?.sidecarResults;
-
-                for (const addon of allAddons) {
-                    if (!addon.enabled) {
-                        continue; // Skip disabled add-ons
+                    const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
+                    if (!Array.isArray(chatLog) || chatLog.length === 0) {
+                        console.log('[Sidecar AI] No chat log found, skipping restoration');
+                        resolve(0);
+                        return;
                     }
 
-                    // Get result from current swipe variant or message.extra
-                    if (!sidecarResults?.[addon.id]) {
-                        continue;
-                    }
+                    const allAddons = addonManager.getAllAddons();
+                    let restoredCount = 0;
 
-                    const stored = sidecarResults[addon.id];
-                    const result = stored.result;
+                    // Wait a bit for DOM to be ready
+                    await new Promise(resolveDelay => setTimeout(resolveDelay, 300));
 
-                    if (result && result.length > 0 && result.length < 100000) {
-                        try {
-                            // Restore the block based on response location
-                            if (addon.responseLocation === 'chatHistory') {
-                                // For chatHistory, check if result is already in the message content
-                                const contentArea = messageElement.querySelector('.mes_text') ||
-                                    messageElement.querySelector('.message') ||
-                                    messageElement;
+                    // Performance: Batch DOM queries - collect all message elements first
+                    const messageElementsMap = new Map();
 
-                                if (contentArea) {
-                                    // Check if result is already displayed
-                                    const resultTag = `<!-- addon-result:${addon.id} -->`;
-                                    const hasResult = contentArea.innerHTML &&
-                                        (contentArea.innerHTML.includes(resultTag) ||
-                                            contentArea.innerHTML.includes(result.substring(0, 50)));
-
-                                    if (!hasResult) {
-                                        // Restore the formatted result
-                                        const formatted = this.formatResult(addon, result, message, false);
-                                        this.injectIntoChatHistory(messageId, addon, formatted);
-                                        restoredCount++;
-                                        console.log(`[Sidecar AI] Restored chatHistory block for ${addon.name} in message ${messageId}`);
-                                    }
-                                }
-                            } else {
-                                // For outsideChatlog, restore dropdown UI
-                                // Check if block already exists
-                                const existingBlock = messageElement.querySelector(`.addon_section-${addon.id}`);
-                                if (!existingBlock) {
-                                    // Restore the dropdown block
-                                    const formatted = this.formatResult(addon, result, message, true);
-                                    // Pass the found messageElement to avoid re-lookup failure
-                                    const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
-                                    if (success) {
-                                        // Mark the container as restored to protect from immediate cleanup
-                                        const container = messageElement.querySelector('.sidecar-container');
-                                        if (container) {
-                                            this.markContainerAsRestored(container);
-                                        }
-                                        restoredCount++;
-                                        console.log(`[Sidecar AI] Restored dropdown block for ${addon.name} in message ${messageId}`);
-                                    }
-                                }
-                            }
-                        } catch (error) {
-                            console.warn(`[Sidecar AI] Failed to restore block for ${addon.name} in message ${messageId}:`, error);
+                    // Pre-fetch all message elements we'll need (batch query)
+                    for (let i = 0; i < chatLog.length; i++) {
+                        const message = chatLog[i];
+                        if (!message || !message.mes || message.is_user) {
+                            continue; // Skip user messages and empty messages
+                        }
+                        const messageId = this.getMessageId(message);
+                        const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(i);
+                        if (messageElement && document.contains(messageElement)) {
+                            messageElementsMap.set(i, { message, messageId, messageElement });
                         }
                     }
-                }
-            }
 
-            console.log(`[Sidecar AI] Restored ${restoredCount} block(s) from metadata`);
-            return restoredCount;
-        } catch (error) {
-            console.error('[Sidecar AI] Error restoring blocks from metadata:', error);
-            return 0;
-        }
+                    // Iterate through cached message elements (avoid repeated DOM queries)
+                    for (const [i, { message, messageId, messageElement }] of messageElementsMap.entries()) {
+
+                        // Check each add-on for saved results in this message
+                        // Check current swipe variant first, then fall back to message.extra
+                        const swipeId = message.swipe_id ?? 0;
+                        const sidecarResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults || message.extra?.sidecarResults;
+
+                        for (const addon of allAddons) {
+                            if (!addon.enabled) {
+                                continue; // Skip disabled add-ons
+                            }
+
+                            // Get result from current swipe variant or message.extra
+                            if (!sidecarResults?.[addon.id]) {
+                                continue;
+                            }
+
+                            const stored = sidecarResults[addon.id];
+                            const result = stored.result;
+
+                            if (result && result.length > 0 && result.length < 100000) {
+                                try {
+                                    // Restore the block based on response location
+                                    if (addon.responseLocation === 'chatHistory') {
+                                        // For chatHistory, check if result is already in the message content
+                                        const contentArea = messageElement.querySelector('.mes_text') ||
+                                            messageElement.querySelector('.message') ||
+                                            messageElement;
+
+                                        if (contentArea) {
+                                            // Check if result is already displayed
+                                            const resultTag = `<!-- addon-result:${addon.id} -->`;
+                                            const hasResult = contentArea.innerHTML &&
+                                                (contentArea.innerHTML.includes(resultTag) ||
+                                                    contentArea.innerHTML.includes(result.substring(0, 50)));
+
+                                            if (!hasResult) {
+                                                // Restore the formatted result
+                                                const formatted = this.formatResult(addon, result, message, false);
+                                                this.injectIntoChatHistory(messageId, addon, formatted);
+                                                restoredCount++;
+                                                console.log(`[Sidecar AI] Restored chatHistory block for ${addon.name} in message ${messageId}`);
+                                            }
+                                        }
+                                    } else {
+                                        // For outsideChatlog, restore dropdown UI
+                                        // Check if block already exists
+                                        const existingBlock = messageElement.querySelector(`.addon_section-${addon.id}`);
+                                        if (!existingBlock) {
+                                            // Restore the dropdown block
+                                            const formatted = this.formatResult(addon, result, message, true);
+                                            // Pass the found messageElement to avoid re-lookup failure
+                                            const success = this.injectIntoDropdown(addon, formatted, messageId, messageElement);
+                                            if (success) {
+                                                // Mark the container as restored to protect from immediate cleanup
+                                                const container = messageElement.querySelector('.sidecar-container');
+                                                if (container) {
+                                                    this.markContainerAsRestored(container);
+                                                }
+                                                restoredCount++;
+                                                console.log(`[Sidecar AI] Restored dropdown block for ${addon.name} in message ${messageId}`);
+                                            }
+                                        }
+                                    }
+                                } catch (error) {
+                                    console.warn(`[Sidecar AI] Failed to restore block for ${addon.name} in message ${messageId}:`, error);
+                                }
+                            }
+                        }
+                    }
+
+                    console.log(`[Sidecar AI] Restored ${restoredCount} block(s) from metadata`);
+                    resolve(restoredCount);
+                } catch (error) {
+                    console.error('[Sidecar AI] Error restoring blocks from metadata:', error);
+                    resolve(0);
+                } finally {
+                    this._isRestoringBlocks = false;
+                }
+            }, 150); // Debounce 150ms
+        });
     }
 
     /**
