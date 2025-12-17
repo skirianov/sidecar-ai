@@ -232,7 +232,8 @@ export class ResultFormatter {
             return false;
         };
 
-        // CRITICAL FIX: Detect and fix white text on white/light backgrounds in style attributes
+        // Contrast fixer (minimal): only fix when BOTH background and color are set
+        // in the same inline style attribute and are obviously unreadable.
         fixed = fixed.replace(/style\s*=\s*["']([^"']*)["']/gi, (match, styles) => {
             let newStyles = styles;
             let modified = false;
@@ -251,24 +252,17 @@ export class ResultFormatter {
             // Check if text is white/light
             const hasWhiteText = textColor ? isWhiteOrVeryLight(textColor) : false;
 
-            // CRITICAL: If white text on light background, FORCE dark text
-            if (hasLightBg && hasWhiteText) {
-                newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #000000 !important');
+            // Only fix if BOTH bg and color exist.
+            // If bg is light and text is also very light, make text dark.
+            if (hasLightBg && textColor && hasWhiteText) {
+                newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #111111');
                 modified = true;
-                console.warn('[Sidecar AI] Fixed white-on-white: Changed white text to black on light background');
-            }
-            // If light background but no color specified, add dark color
-            else if (hasLightBg && !textColor) {
-                newStyles = newStyles + '; color: #000000 !important';
-                modified = true;
-            }
-            // If light background but light text (not white), force dark
-            else if (hasLightBg && textColor) {
+            } else if (hasLightBg && textColor) {
                 const hexMatch = textColor.match(/#([a-fA-F0-9]{3}|[a-fA-F0-9]{6})/);
                 if (hexMatch) {
                     const brightness = getBrightness(hexMatch[0]);
-                    if (brightness > 170) {
-                        newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #000000 !important');
+                    if (brightness > 200) {
+                        newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #111111');
                         modified = true;
                     }
                 }
@@ -282,7 +276,7 @@ export class ResultFormatter {
                 if (hexMatch) {
                     const brightness = getBrightness(hexMatch[0]);
                     if (brightness < 85) {
-                        newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #ffffff !important');
+                        newStyles = newStyles.replace(/color\s*:\s*[^;]+/gi, 'color: #ffffff');
                         modified = true;
                     }
                 }
@@ -290,50 +284,6 @@ export class ResultFormatter {
 
             return modified ? match.replace(styles, newStyles) : match;
         });
-
-        // Fix 1: Replace white/light text colors that might be on light backgrounds
-        fixed = fixed.replace(/color\s*:\s*(white|#fff|#ffffff|rgb\(\s*255\s*,\s*255\s*,\s*255\s*\))/gi, (match) => {
-            // Check context - if we're in a style with light background, this will be caught above
-            // But also fix standalone white colors that might be problematic
-            return 'color: #000000'; // Default to black, will be overridden if background is dark
-        });
-
-        // Fix 2: Replace rgba/rgb with low opacity or light colors
-        fixed = fixed.replace(/color\s*:\s*rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/gi, (match, r, g, b, a) => {
-            const brightness = (parseInt(r) + parseInt(g) + parseInt(b)) / 3;
-            const opacity = a ? parseFloat(a) : 1.0;
-
-            // If opacity is low or color is light, use solid dark
-            if (opacity < 0.6 || brightness > 170) {
-                return 'color: #000000';
-            } else if (brightness < 85) {
-                return 'color: #ffffff';
-            }
-            return match;
-        });
-
-        // Fix 3: Common low-contrast color names and values
-        const lowContrastColors = {
-            'white': '#000000',
-            '#fff': '#000000',
-            '#ffffff': '#000000',
-            '#aaa': '#000000',
-            '#bbb': '#000000',
-            '#ccc': '#000000',
-            '#ddd': '#000000',
-            '#eee': '#000000',
-            '#f0f0f0': '#000000',
-            '#f5f5f5': '#000000',
-            '#e8e8e8': '#000000',
-            '#444': '#ffffff',
-            '#555': '#ffffff',
-            '#666': '#ffffff',
-            '#777': '#ffffff',
-        };
-
-        for (const [badColor, goodColor] of Object.entries(lowContrastColors)) {
-            fixed = fixed.replace(new RegExp(`color\\s*:\\s*${badColor.replace('#', '\\#')}\\b`, 'gi'), `color: ${goodColor}`);
-        }
 
         return fixed;
     }
@@ -709,6 +659,28 @@ export class ResultFormatter {
                 // Add actions container to summary
                 const actionsDiv = document.createElement('div');
                 actionsDiv.className = 'addon_result_actions';
+
+                // Regenerate button
+                const regenBtn = document.createElement('button');
+                regenBtn.innerHTML = '<i class="fa-solid fa-redo"></i>';
+                regenBtn.className = 'menu_button';
+                regenBtn.title = 'Regenerate Result';
+
+                regenBtn.onclick = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (confirm('Are you sure you want to regenerate this result?')) {
+                        if (window.addOnsExtension && window.addOnsExtension.retryAddon) {
+                            // Remove existing result to prepare for regeneration
+                            const content = addonSection.querySelector('.addon_result_content');
+                            if (content) {
+                                content.innerHTML = '';
+                            }
+                            window.addOnsExtension.retryAddon(addon.id, messageId);
+                        }
+                    }
+                };
+                actionsDiv.appendChild(regenBtn);
 
                 // Edit button
                 const editBtn = document.createElement('button');
