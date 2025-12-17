@@ -17,6 +17,54 @@ export class EventHandler {
         this.lastProcessedMessageId = null;
         this.lastProcessedSwipeId = null;
         this.queuedTriggers = new Set(); // Set of addon IDs queued to run
+        // Performance: Store fallback observer for cleanup
+        this.fallbackObserver = null;
+    }
+
+    /**
+     * Resolve SillyTavern event payloads to a chat index + message object.
+     * In SillyTavern, MESSAGE_SENT / MESSAGE_RECEIVED / MESSAGE_SWIPED payload is the chat index (mesid).
+     */
+    resolveMessageRefFromEvent(data) {
+        const chatLog = this.contextBuilder.getChatLog();
+        const ref = { chatIndex: null, message: null };
+
+        // Canonical: numeric chat index
+        if (typeof data === 'number' && Number.isInteger(data)) {
+            ref.chatIndex = data;
+            ref.message = Array.isArray(chatLog) ? (chatLog[data] || null) : null;
+            return ref;
+        }
+
+        // Some emitters may pass the DOM element, or an object containing it.
+        const maybeElement = data?.message && data.message.nodeType === 1 ? data.message : (data?.nodeType === 1 ? data : null);
+        if (maybeElement) {
+            const mesidAttr = maybeElement.getAttribute?.('mesid');
+            const idx = mesidAttr !== null && mesidAttr !== undefined && mesidAttr !== '' && !Number.isNaN(Number(mesidAttr))
+                ? Number(mesidAttr)
+                : null;
+            if (idx !== null && Number.isInteger(idx)) {
+                ref.chatIndex = idx;
+                ref.message = Array.isArray(chatLog) ? (chatLog[idx] || null) : null;
+                return ref;
+            }
+            // If we can't map it, still return the element as message for user/ai detection.
+            ref.message = maybeElement;
+            return ref;
+        }
+
+        // Fallback: try to use provided message object
+        if (data?.message && typeof data.message === 'object') {
+            ref.message = data.message;
+            if (Array.isArray(chatLog)) {
+                const idx = chatLog.indexOf(data.message);
+                if (idx >= 0) ref.chatIndex = idx;
+            }
+            return ref;
+        }
+
+        // Unknown payload; let caller fall back.
+        return ref;
     }
 
     /**
@@ -24,11 +72,10 @@ export class EventHandler {
      */
     registerListeners() {
         try {
-            const { eventSource, event_types } = this.context;
+            const eventSource = this.context?.eventSource;
+            const event_types = this.context?.event_types || this.context?.eventTypes;
 
             if (eventSource && event_types) {
-                console.log('[Sidecar AI] Available event types:', Object.keys(event_types));
-
                 // Listen for new messages - try multiple event types
                 const messageEvents = [
                     event_types.MESSAGE_RECEIVED,
@@ -41,10 +88,8 @@ export class EventHandler {
 
                 messageEvents.forEach(eventType => {
                     if (eventType) {
-                        console.log(`[Sidecar AI] Registering listener for: ${eventType}`);
                         eventSource.on(eventType, (data) => {
                             try {
-                                console.log(`[Sidecar AI] Event fired: ${eventType}`, data);
                                 // For MESSAGE_SENT, wait a bit to ensure message is in chat array
                                 if (eventType === event_types.MESSAGE_SENT || eventType === 'MESSAGE_SENT') {
                                     setTimeout(() => {
@@ -60,7 +105,29 @@ export class EventHandler {
                     }
                 });
 
+                // Reliability fallback: some ST builds/extensions may not emit message_* events consistently.
+                // GENERATION_ENDED is emitted after the AI response is finalized.
+                const generationEndedEvent = event_types.GENERATION_ENDED || 'generation_ended';
+                if (generationEndedEvent) {
+                    eventSource.on(generationEndedEvent, () => {
+                        try {
+                            const chatLog = this.contextBuilder.getChatLog();
+                            if (Array.isArray(chatLog) && chatLog.length > 0) {
+                                // Run against latest message index (mesid)
+                                this.handleMessageReceived(chatLog.length - 1);
+                            }
+                        } catch (e) {
+                            console.error(`[Sidecar AI] Error in ${generationEndedEvent} fallback:`, e);
+                        }
+                    });
+                }
+
                 console.log('[Sidecar AI] Event listeners registered for', messageEvents.length, 'event type(s)');
+
+                // Disconnect fallback observer if primary event system is now available
+                if (this.fallbackObserver) {
+                    this.disconnectFallbackObserver();
+                }
             } else {
                 console.warn('[Sidecar AI] Event system not available, using fallback');
                 this.setupFallbackListeners();
@@ -76,6 +143,11 @@ export class EventHandler {
      * Setup fallback listeners (polling or DOM observation)
      */
     setupFallbackListeners() {
+        // Only create if we don't already have one
+        if (this.fallbackObserver) {
+            return;
+        }
+
         console.log('[Sidecar AI] Setting up fallback listeners using MutationObserver');
 
         // Use MutationObserver to watch for new messages
@@ -111,6 +183,9 @@ export class EventHandler {
                 subtree: true
             });
 
+            // Store observer reference for cleanup
+            this.fallbackObserver = observer;
+
             // Initialize message count
             const messages = chatContainer.querySelectorAll('.mes, .message');
             lastMessageCount = messages.length;
@@ -119,6 +194,36 @@ export class EventHandler {
         } else {
             console.warn('[Sidecar AI] Chat container not found for fallback listeners');
         }
+    }
+
+    /**
+     * Disconnect fallback observer to prevent memory leaks
+     */
+    disconnectFallbackObserver() {
+        if (this.fallbackObserver) {
+            this.fallbackObserver.disconnect();
+            this.fallbackObserver = null;
+            console.log('[Sidecar AI] Fallback MutationObserver disconnected');
+        }
+    }
+
+    /**
+     * Cleanup all resources (observers, timeouts, etc.)
+     */
+    cleanup() {
+        // Disconnect fallback observer
+        this.disconnectFallbackObserver();
+
+        // Clear save timeout
+        if (this.saveChatTimeout) {
+            clearTimeout(this.saveChatTimeout);
+            this.saveChatTimeout = null;
+        }
+
+        // Clear queued triggers
+        this.queuedTriggers.clear();
+
+        console.log('[Sidecar AI] EventHandler cleanup complete');
     }
 
     /**
@@ -134,13 +239,11 @@ export class EventHandler {
             this.isProcessing = true;
             console.log('[Sidecar AI] Message received event fired', data);
 
-            // Get current message
-            let message = data?.message;
+            const chatLog = this.contextBuilder.getChatLog();
+            const { chatIndex, message: resolvedMessage } = this.resolveMessageRefFromEvent(data);
 
-            // If data is just an ID (number), try to find it
-            if (!message && typeof data === 'number') {
-                message = this.resultFormatter.findMessageObject(data);
-            }
+            // Get current message (prefer SillyTavern chat index resolution)
+            let message = resolvedMessage || data?.message;
 
             // If message still not found, get the absolute latest message from log
             if (!message) {
@@ -159,35 +262,23 @@ export class EventHandler {
 
             // Check if message is from user
             const isUserMessage = this.isUserMessage(message);
-            console.log('[Sidecar AI] Message type check:', {
-                isUserMessage,
-                messageType: typeof message,
-                hasMes: !!message?.mes,
-                isUser: message?.is_user,
-                role: message?.role,
-                name: message?.name
-            });
+            // (Intentionally low-noise) Message type is determined by ST properties/classes.
 
             if (isUserMessage) {
                 // USER MESSAGE: Check for triggers
-                const triggerAddons = this.addonManager.getEnabledAddons()
-                    .filter(addon => addon.triggerMode === 'trigger');
+                // Performance: Single-pass categorization (reuse logic if we already categorized)
+                const enabledAddons = this.addonManager.getEnabledAddons();
+                const triggerAddons = enabledAddons.filter(addon => addon.triggerMode === 'trigger');
 
                 console.log(`[Sidecar AI] Found ${triggerAddons.length} trigger mode sidecar(s)`);
 
                 if (triggerAddons.length > 0) {
                     const messageText = this.getUserMessageText(message);
-                    console.log('[Sidecar AI] Checking triggers for user message:', messageText.substring(0, 50) + '...');
-
                     let queuedCount = 0;
                     triggerAddons.forEach(addon => {
-                        console.log(`[Sidecar AI] Checking addon ${addon.name} triggers:`, addon.triggerConfig);
                         if (this.checkTriggerMatch(messageText, addon.triggerConfig)) {
-                            console.log(`[Sidecar AI] Trigger matched for addon: ${addon.name}`);
                             this.queuedTriggers.add(addon.id);
                             queuedCount++;
-                        } else {
-                            console.log(`[Sidecar AI] No match for addon: ${addon.name}`);
                         }
                     });
 
@@ -201,21 +292,36 @@ export class EventHandler {
             // AI MESSAGE: Process auto add-ons AND queued triggers
             console.log('[Sidecar AI] Processing add-ons for AI message');
 
+            // Performance: Single-pass categorization instead of multiple filters
+            const enabledAddons = this.addonManager.getEnabledAddons();
+            const categorized = {
+                auto: [],
+                trigger: [],
+                manual: []
+            };
+
+            // Single pass to categorize all enabled addons
+            enabledAddons.forEach(addon => {
+                const mode = addon.triggerMode || 'auto';
+                if (categorized[mode]) {
+                    categorized[mode].push(addon);
+                } else {
+                    categorized.auto.push(addon); // Default fallback
+                }
+            });
+
             // FALLBACK: Check if previous message was a user message and process triggers
             // This handles cases where MESSAGE_SENT event wasn't caught
-            const chatLog = this.contextBuilder.getChatLog();
             if (chatLog && chatLog.length >= 2) {
                 const previousMessage = chatLog[chatLog.length - 2]; // Second-to-last message
                 if (previousMessage && this.isUserMessage(previousMessage)) {
                     console.log('[Sidecar AI] Fallback: Detected user message before AI response, checking triggers');
-                    const triggerAddons = this.addonManager.getEnabledAddons()
-                        .filter(addon => addon.triggerMode === 'trigger');
 
-                    if (triggerAddons.length > 0) {
+                    if (categorized.trigger.length > 0) {
                         const messageText = this.getUserMessageText(previousMessage);
                         console.log('[Sidecar AI] Fallback: Checking triggers for user message:', messageText.substring(0, 50) + '...');
 
-                        triggerAddons.forEach(addon => {
+                        categorized.trigger.forEach(addon => {
                             console.log(`[Sidecar AI] Fallback: Checking addon ${addon.name} triggers:`, addon.triggerConfig);
                             if (this.checkTriggerMatch(messageText, addon.triggerConfig)) {
                                 console.log(`[Sidecar AI] Fallback: Trigger matched for addon: ${addon.name}`);
@@ -228,18 +334,21 @@ export class EventHandler {
                 }
             }
 
-            // 1. Get auto-triggered add-ons
-            const autoAddons = this.addonManager.getEnabledAddons()
-                .filter(addon => addon.triggerMode === 'auto');
+            // 1. Get auto-triggered add-ons (already categorized)
+            const autoAddons = categorized.auto;
 
             // 2. Get queued trigger add-ons
             const queuedAddons = [];
             if (this.queuedTriggers.size > 0) {
                 console.log(`[Sidecar AI] Found ${this.queuedTriggers.size} queued trigger(s)`);
+                // Use a Set for O(1) lookup when checking enabled addons
+                const enabledAddonIds = new Set(enabledAddons.map(a => a.id));
                 this.queuedTriggers.forEach(id => {
-                    const addon = this.addonManager.getAddon(id);
-                    if (addon && addon.enabled) {
-                        queuedAddons.push(addon);
+                    if (enabledAddonIds.has(id)) {
+                        const addon = this.addonManager.getAddon(id);
+                        if (addon && addon.enabled) {
+                            queuedAddons.push(addon);
+                        }
                     }
                 });
                 // Clear queue immediately so we don't re-process if something fails/retries
@@ -249,9 +358,15 @@ export class EventHandler {
             // Combine lists
             const allAddonsToRun = [...autoAddons, ...queuedAddons];
 
-            // Remove duplicates (in case an addon is both auto and triggered?? shouldn't happen but safe)
-            const uniqueAddons = Array.from(new Set(allAddonsToRun.map(a => a.id)))
-                .map(id => allAddonsToRun.find(a => a.id === id));
+            // Remove duplicates using Set (more efficient than Array.from + find)
+            const seenIds = new Set();
+            const uniqueAddons = allAddonsToRun.filter(addon => {
+                if (seenIds.has(addon.id)) {
+                    return false;
+                }
+                seenIds.add(addon.id);
+                return true;
+            });
 
             console.log(`[Sidecar AI] Running ${uniqueAddons.length} sidecar(s) (${autoAddons.length} auto, ${queuedAddons.length} triggered)`);
 
@@ -263,15 +378,15 @@ export class EventHandler {
             // Wait a bit to ensure AI message is fully rendered in DOM
             await new Promise(resolve => setTimeout(resolve, 300));
 
-            // Re-get the latest AI message to ensure we have the correct one
-            const aiMessage = this.getLatestMessage();
+            // Prefer the message referenced by the event payload; fall back to latest AI message.
+            const aiMessage = (!this.isUserMessage(message) && message && typeof message === 'object') ? message : this.getLatestMessage();
             if (!aiMessage) {
                 console.warn('[Sidecar AI] Could not find AI message after delay, skipping');
                 return;
             }
 
             // Avoid processing the same message twice (unless swipe variant changed)
-            const aiMessageId = this.resultFormatter.getMessageId(aiMessage);
+            const aiMessageId = (chatIndex !== null && chatIndex !== undefined) ? chatIndex : this.resultFormatter.getMessageId(aiMessage);
             const aiSwipeId = aiMessage.swipe_id ?? 0;
 
             if (aiMessageId &&
@@ -473,19 +588,23 @@ export class EventHandler {
                 return;
             }
 
-            // Find message object
-            let message = this.resultFormatter.findMessageObject(messageId);
+            // In SillyTavern, messageId is expected to be the chat index (mesid).
+            // Resolve deterministically; avoid retrying against a random latest message.
+            const chatLog = this.contextBuilder.getChatLog();
+            let message = null;
 
-            // If not found by ID (e.g. if messageId is a DOM ID), try to find the message element and map back
-            if (!message) {
-                // Fallback: use the latest AI message if we can't find specific one
-                // This is risky but better than failing if ID mapping fails
-                message = this.getLatestMessage();
-                console.warn(`[Sidecar AI] Could not find message object for ${messageId}, using latest message`);
+            const numericId = (typeof messageId === 'number')
+                ? messageId
+                : (typeof messageId === 'string' && messageId.trim() !== '' && !Number.isNaN(Number(messageId)) ? Number(messageId) : null);
+
+            if (numericId !== null && Array.isArray(chatLog) && numericId >= 0 && numericId < chatLog.length) {
+                message = chatLog[numericId] || null;
+            } else {
+                message = this.resultFormatter.findMessageObject(messageId);
             }
 
             if (!message) {
-                console.error(`[Sidecar AI] No message found for retry`);
+                console.error(`[Sidecar AI] No message found for retry (messageId: ${messageId})`);
                 return;
             }
 
@@ -507,18 +626,26 @@ export class EventHandler {
             return;
         }
 
-        // Group add-ons by request mode
-        const grouped = this.addonManager.getGroupedAddons(addons);
+        // Performance: Start request cycle to cache context lookups
+        this.contextBuilder.startRequestCycle();
 
-        // Process all groups and standalone addons in parallel
-        const promises = [
-            // Process batch groups
-            ...grouped.batch.map(batchGroup => this.processBatchGroup(batchGroup, message)),
-            // Process standalone add-ons
-            ...grouped.standalone.map(addon => this.processStandaloneAddon(addon, message))
-        ];
+        try {
+            // Group add-ons by request mode
+            const grouped = this.addonManager.getGroupedAddons(addons);
 
-        await Promise.all(promises);
+            // Process all groups and standalone addons in parallel
+            const promises = [
+                // Process batch groups
+                ...grouped.batch.map(batchGroup => this.processBatchGroup(batchGroup, message)),
+                // Process standalone add-ons
+                ...grouped.standalone.map(addon => this.processStandaloneAddon(addon, message))
+            ];
+
+            await Promise.all(promises);
+        } finally {
+            // Performance: Clear request cycle cache after processing completes
+            this.contextBuilder.clearRequestCycle();
+        }
     }
 
     /**
@@ -557,7 +684,7 @@ export class EventHandler {
             });
 
             // Send batch request
-            const responses = await this.aiClient.sendBatchToAI(addons, prompts);
+            const responses = await this.aiClient.sendBatchToAI(addons, prompts, messageId);
 
             // Process each response
             for (let i = 0; i < addons.length; i++) {
@@ -575,14 +702,9 @@ export class EventHandler {
             console.error('[Sidecar AI] Error processing batch group:', error);
             const messageId = this.resultFormatter.getMessageId(message);
 
-            // Create retry callback for batch
-            const retryCallback = async () => {
-                await this.processBatchGroup(addons, message);
-            };
-
             addons.forEach(addon => {
                 this.resultFormatter.hideLoadingIndicator(messageId, addon);
-                this.resultFormatter.showErrorIndicator(messageId, addon, error, retryCallback);
+                this.resultFormatter.showErrorIndicator(messageId, addon, error);
             });
         }
     }
@@ -616,7 +738,7 @@ export class EventHandler {
             const prompt = this.contextBuilder.buildPrompt(addon, context);
 
             // Send to AI
-            const response = await this.aiClient.sendToAI(addon, prompt);
+            const response = await this.aiClient.sendToAI(addon, prompt, 0, messageId);
 
             // Hide loading and inject result
             this.resultFormatter.hideLoadingIndicator(messageId, addon);
@@ -628,14 +750,7 @@ export class EventHandler {
             console.error(`[Sidecar AI] Error processing add-on ${addon.name}:`, error);
             const messageId = this.resultFormatter.getMessageId(message);
             this.resultFormatter.hideLoadingIndicator(messageId, addon);
-
-            // Create retry callback
-            const retryCallback = async () => {
-                // Re-process the add-on
-                await this.processStandaloneAddon(addon, message);
-            };
-
-            this.resultFormatter.showErrorIndicator(messageId, addon, error, retryCallback);
+            this.resultFormatter.showErrorIndicator(messageId, addon, error);
         }
     }
 
@@ -663,6 +778,10 @@ export class EventHandler {
 
         // Save metadata for history retrieval (and persistence)
         this.resultFormatter.saveResultToMetadata(message, addon, response);
+
+        // Inline projection (optional): keep message.mes in sync for main AI context visibility.
+        // This is idempotent; if no inline-enabled sidecars exist it will strip/avoid inline region.
+        this.resultFormatter.applyInlineSidecarResultsToMessage(message);
 
         // Trigger debounced save to ensure metadata persists
         this.debouncedSaveChat();

@@ -14,6 +14,12 @@ export class AIClient {
             maxDelay: 10000, // 10 seconds
             backoffMultiplier: 2
         };
+
+        // Cache for Connection Manager module (optional)
+        this._connectionManagerModule = null;
+
+        // Performance: Track active request controllers for cancellation
+        this.activeRequests = new Map(); // Key: `${addonId}:${messageId}`, Value: AbortController
     }
 
     /**
@@ -34,11 +40,91 @@ export class AIClient {
     }
 
     /**
+     * Best-effort access to SillyTavern's ConnectionManagerRequestService for per-profile requests.
+     * This allows sidecars to use a different configured connection/preset than the main AI.
+     */
+    async getConnectionManagerRequestService() {
+        // 1) If already cached, return it
+        if (this._connectionManagerModule?.ConnectionManagerRequestService) {
+            return this._connectionManagerModule.ConnectionManagerRequestService;
+        }
+
+        // 2) If available globally (unlikely, but cheap to check)
+        if (typeof window !== 'undefined' && window.ConnectionManagerRequestService) {
+            return window.ConnectionManagerRequestService;
+        }
+
+        // 3) Dynamic import from SillyTavern public scripts
+        try {
+            // SillyTavern serves public/scripts as /scripts/...
+            this._connectionManagerModule = await import('/scripts/extensions/shared.js');
+            return this._connectionManagerModule?.ConnectionManagerRequestService || null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    /**
      * Send single add-on request to AI using SillyTavern's ChatCompletionService
      * Includes automatic retry with exponential backoff
+     * @param {Object} addon - Addon configuration
+     * @param {string|Array} prompt - Prompt to send
+     * @param {number} retryCount - Current retry attempt (internal)
+     * @param {string|number} messageId - Optional message ID for request cancellation
      */
-    async sendToAI(addon, prompt, retryCount = 0) {
+    async sendToAI(addon, prompt, retryCount = 0, messageId = null) {
+        // Performance: Cancel previous request for same addon+message if exists
+        if (messageId !== null && retryCount === 0) {
+            const requestKey = `${addon.id}:${messageId}`;
+            const previousController = this.activeRequests.get(requestKey);
+            if (previousController) {
+                previousController.abort();
+                this.activeRequests.delete(requestKey);
+                console.log(`[Sidecar AI] Cancelled previous request for ${addon.name} (message ${messageId})`);
+            }
+        }
+
+        // Create abort controller for this request
+        const abortController = new AbortController();
+        if (messageId !== null && retryCount === 0) {
+            const requestKey = `${addon.id}:${messageId}`;
+            this.activeRequests.set(requestKey, abortController);
+        }
+
         try {
+            // If user selected a Connection Manager profile, route the request through it.
+            // This enables a different connection/preset than the main AI and avoids CORS.
+            if (addon?.connectionProfileId) {
+                const cm = await this.getConnectionManagerRequestService();
+                if (cm && typeof cm.sendRequest === 'function') {
+                    if (retryCount === 0) {
+                        console.log(`[Sidecar AI] Using Connection Manager profile ${addon.connectionProfileId} for ${addon.name}`);
+                    }
+
+                    // For ConnectionManagerRequestService, prompt can be a string or a messages array.
+                    // If our prompt is a string, pass it directly; if it's an array, pass messages.
+                    const promptArg = Array.isArray(prompt) ? prompt : String(prompt || '');
+
+                    const overridePayload = {};
+                    // Allow OpenRouter provider routing (only meaningful if the selected profile maps to OpenRouter source)
+                    if (Array.isArray(addon.serviceProvider) && addon.serviceProvider.length > 0) {
+                        overridePayload.provider = addon.serviceProvider;
+                    }
+
+                    const response = await cm.sendRequest(
+                        addon.connectionProfileId,
+                        promptArg,
+                        4096,
+                        { stream: false, extractData: true, includePreset: true },
+                        overridePayload
+                    );
+
+                    return response?.content || response?.choices?.[0]?.message?.content || String(response);
+                } else {
+                    console.warn('[Sidecar AI] Connection Manager not available; falling back to ChatCompletionService');
+                }
+            }
+
             const provider = addon.aiProvider || 'openai';
             const model = addon.aiModel || 'gpt-3.5-turbo';
             const apiUrl = addon.apiUrl; // Custom endpoint support
@@ -57,11 +143,15 @@ export class AIClient {
                 if (Array.isArray(prompt)) {
                     messages = prompt;
                 } else {
-                    // Add system message to enforce instruction-only behavior
+                    // Minimal system message to reduce drift without forcing a specific output format.
                     messages = [
                         {
                             role: 'system',
-                            content: 'You are a task executor. Your ONLY job is to follow the instruction block provided by the user. DO NOT continue stories, generate dialogue, or roleplay. NEVER TALK, ACT or SPEAK as {{user}} unless specifically stated in the instruction. ONLY execute the specific task requested in the instruction block. Ignore chat history for story continuation purposes - it is provided only for context reference.\n\nIMPORTANT OUTPUT FORMATTING:\n- ALWAYS use clean, standard Markdown formatting unless the instruction explicitly requests HTML/XML.\n- Use ## or ### for headings (NOT # which renders too large).\n- Use **bold** and *italic* for emphasis.\n- Use - or * for unordered lists, with proper spacing (blank line before/after lists).\n- Use blank lines between paragraphs for readability.\n- Keep paragraphs short and well-spaced.\n- NEVER mix Markdown and HTML - choose one format consistently.\n- If you must use HTML (only when explicitly requested), use semantic tags and proper structure.'
+                            content: [
+                                'You are a task executor.',
+                                'Follow the user instruction exactly. Do not add extra content. Do not roleplay.',
+                                'Output ONLY the final requested content (no preface, no explanation, no code fences).',
+                            ].join('\n')
                         },
                         {
                             role: 'user',
@@ -100,15 +190,21 @@ export class AIClient {
 
             // Fallback: if ChatCompletionService not available, use direct API
             console.warn('[Sidecar AI] ChatCompletionService not available, using fallback');
-            return await this.sendDirectAPIFallback(addon, prompt, provider, model, apiUrl);
+            return await this.sendDirectAPIFallback(addon, prompt, provider, model, apiUrl, abortController.signal);
         } catch (error) {
+            // Check if request was aborted
+            if (error.name === 'AbortError' || abortController.signal.aborted) {
+                console.log(`[Sidecar AI] Request aborted for ${addon.name}`);
+                throw error;
+            }
+
             // Check if we should retry
             if (this.shouldRetry(error, retryCount)) {
                 const delay = this.calculateRetryDelay(retryCount);
                 console.log(`[Sidecar AI] Retrying ${addon.name} after ${delay}ms (attempt ${retryCount + 1}/${this.retryConfig.maxRetries})`);
 
                 await this.sleep(delay);
-                return await this.sendToAI(addon, prompt, retryCount + 1);
+                return await this.sendToAI(addon, prompt, retryCount + 1, messageId);
             }
 
             // Store retry count in error for UI display
@@ -116,6 +212,12 @@ export class AIClient {
             error.addonName = addon.name;
             console.error(`[Sidecar AI] Error sending to AI (${addon.name}) after ${retryCount} retries:`, error);
             throw error;
+        } finally {
+            // Clean up abort controller
+            if (messageId !== null && retryCount === 0) {
+                const requestKey = `${addon.id}:${messageId}`;
+                this.activeRequests.delete(requestKey);
+            }
         }
     }
 
@@ -169,77 +271,146 @@ export class AIClient {
 
     /**
      * Send batch request to AI
+     * @param {Array} addons - Array of addon configurations
+     * @param {Array} prompts - Array of prompts (one per addon)
+     * @param {string|number} messageId - Optional message ID for request cancellation
      */
-    async sendBatchToAI(addons, prompts) {
+    async sendBatchToAI(addons, prompts, messageId = null) {
         if (addons.length === 0) {
             return [];
         }
 
-        // All add-ons in batch must have same provider/model
-        const provider = addons[0].aiProvider;
-        const model = addons[0].aiModel;
+        // Performance: Cancel previous batch requests for same message if exists
+        if (messageId !== null) {
+            // Cancel individual requests for each addon in batch
+            addons.forEach(addon => {
+                const requestKey = `${addon.id}:${messageId}`;
+                const previousController = this.activeRequests.get(requestKey);
+                if (previousController) {
+                    previousController.abort();
+                    this.activeRequests.delete(requestKey);
+                }
+            });
+        }
 
-        const allSame = addons.every(addon =>
-            addon.aiProvider === provider && addon.aiModel === model
-        );
-
-        if (!allSame) {
-            throw new Error('Batch add-ons must have the same provider and model');
+        // Create abort controller for batch request
+        const batchAbortController = new AbortController();
+        if (messageId !== null) {
+            // Store batch controller (use special key)
+            const batchKey = `batch:${messageId}`;
+            this.activeRequests.set(batchKey, batchAbortController);
         }
 
         try {
-            const apiKey = addons[0].apiKey || await this.getProviderApiKey(provider);
+            // If using Connection Manager profile, all add-ons must share the same profile.
+            const profileId = addons[0].connectionProfileId || '';
+            if (profileId) {
+                const allSameProfile = addons.every(a => (a.connectionProfileId || '') === profileId);
+                if (!allSameProfile) {
+                    throw new Error('Batch add-ons must have the same Connection Profile');
+                }
 
-            if (!apiKey) {
-                throw new Error(`No API key found for provider: ${provider}`);
-            }
+                const cm = await this.getConnectionManagerRequestService();
+                if (!cm || typeof cm.sendRequest !== 'function') {
+                    throw new Error('Connection Manager is not available');
+                }
 
-            // Combine prompts
-            const combinedPrompt = prompts.join('\n\n---\n\n');
-
-            // Use SillyTavern's ChatCompletionService for batch
-            if (this.context && this.context.ChatCompletionService) {
-                const chatCompletionSource = this.getChatCompletionSource(provider);
-                const messages = Array.isArray(combinedPrompt)
-                    ? combinedPrompt
-                    : [{ role: 'user', content: combinedPrompt }];
-
-                const response = await this.context.ChatCompletionService.processRequest({
-                    stream: false,
-                    messages: messages,
-                    model: model,
-                    chat_completion_source: chatCompletionSource,
-                    max_tokens: 4096,
-                    temperature: 0.7,
-                    custom_url: addons[0].apiUrl || undefined,
-                }, {
-                    presetName: undefined,
-                }, true);
+                const combinedPrompt = prompts.join('\n\n---\n\n');
+                const response = await cm.sendRequest(
+                    profileId,
+                    combinedPrompt,
+                    4096,
+                    { stream: false, extractData: true, includePreset: true },
+                    {}
+                );
 
                 const content = response?.content || response?.choices?.[0]?.message?.content || String(response);
                 return this.splitBatchResponse(content, addons.length);
             }
 
-            // Fallback
-            const response = await this.sendDirectAPIFallback(
-                addons[0],
-                combinedPrompt,
-                provider,
-                model,
-                addons[0].apiUrl
+            // All add-ons in batch must have same provider/model
+            const provider = addons[0].aiProvider;
+            const model = addons[0].aiModel;
+
+            const allSame = addons.every(addon =>
+                addon.aiProvider === provider && addon.aiModel === model
             );
 
-            return this.splitBatchResponse(response, addons.length);
+            if (!allSame) {
+                throw new Error('Batch add-ons must have the same provider and model');
+            }
+
+            try {
+                const apiKey = addons[0].apiKey || await this.getProviderApiKey(provider);
+
+                if (!apiKey) {
+                    throw new Error(`No API key found for provider: ${provider}`);
+                }
+
+                // Combine prompts
+                const combinedPrompt = prompts.join('\n\n---\n\n');
+
+                // Use SillyTavern's ChatCompletionService for batch
+                if (this.context && this.context.ChatCompletionService) {
+                    const chatCompletionSource = this.getChatCompletionSource(provider);
+                    const messages = Array.isArray(combinedPrompt)
+                        ? combinedPrompt
+                        : [{ role: 'user', content: combinedPrompt }];
+
+                    const response = await this.context.ChatCompletionService.processRequest({
+                        stream: false,
+                        messages: messages,
+                        model: model,
+                        chat_completion_source: chatCompletionSource,
+                        max_tokens: 4096,
+                        temperature: 0.7,
+                        custom_url: addons[0].apiUrl || undefined,
+                    }, {
+                        presetName: undefined,
+                    }, true);
+
+                    const content = response?.content || response?.choices?.[0]?.message?.content || String(response);
+                    return this.splitBatchResponse(content, addons.length);
+                }
+
+                // Fallback
+                const response = await this.sendDirectAPIFallback(
+                    addons[0],
+                    combinedPrompt,
+                    provider,
+                    model,
+                    addons[0].apiUrl,
+                    batchAbortController.signal
+                );
+
+                return this.splitBatchResponse(response, addons.length);
+            } catch (error) {
+                // Check if request was aborted
+                if (error.name === 'AbortError' || batchAbortController.signal.aborted) {
+                    console.log(`[Sidecar AI] Batch request aborted for message ${messageId}`);
+                    throw error;
+                }
+                console.error('[Add-Ons Extension] Error sending batch to AI:', error);
+                throw error;
+            }
         } catch (error) {
-            console.error('[Add-Ons Extension] Error sending batch to AI:', error);
+            // Handle errors from outer try block (Connection Manager path or other errors)
+            console.error('[Add-Ons Extension] Error in sendBatchToAI:', error);
             throw error;
+        } finally {
+            // Clean up batch controller (always run, regardless of success or error)
+            if (messageId !== null) {
+                const batchKey = `batch:${messageId}`;
+                this.activeRequests.delete(batchKey);
+            }
         }
     }
 
     /**
      * Fallback: Send direct API request (only used if ChatCompletionService unavailable)
+     * @param {AbortSignal} signal - Optional abort signal for request cancellation
      */
-    async sendDirectAPIFallback(addon, prompt, provider, model, apiUrl = null) {
+    async sendDirectAPIFallback(addon, prompt, provider, model, apiUrl = null, signal = null) {
         let endpoint = apiUrl;
 
         if (!endpoint) {
@@ -269,11 +440,18 @@ export class AIClient {
             headers['Authorization'] = `Bearer ${apiKey}`;
         }
 
-        const response = await fetch(endpoint, {
+        const fetchOptions = {
             method: 'POST',
             headers: headers,
             body: JSON.stringify(requestBody)
-        });
+        };
+
+        // Add abort signal if provided
+        if (signal) {
+            fetchOptions.signal = signal;
+        }
+
+        const response = await fetch(endpoint, fetchOptions);
 
         if (!response.ok) {
             const errorText = await response.text();
@@ -1160,5 +1338,48 @@ export class AIClient {
 
         console.log(`[Sidecar AI] No API key found for provider: ${provider}`);
         return null;
+    }
+
+    /**
+     * Cancel all pending requests
+     */
+    cancelAllRequests() {
+        const count = this.activeRequests.size;
+        this.activeRequests.forEach((controller, key) => {
+            controller.abort();
+        });
+        this.activeRequests.clear();
+        if (count > 0) {
+            console.log(`[Sidecar AI] Cancelled ${count} pending request(s)`);
+        }
+    }
+
+    /**
+     * Cancel requests for a specific message
+     */
+    cancelRequestsForMessage(messageId) {
+        let cancelled = 0;
+        const keysToDelete = [];
+
+        this.activeRequests.forEach((controller, key) => {
+            if (key.endsWith(`:${messageId}`) || key === `batch:${messageId}`) {
+                controller.abort();
+                keysToDelete.push(key);
+                cancelled++;
+            }
+        });
+
+        keysToDelete.forEach(key => this.activeRequests.delete(key));
+        if (cancelled > 0) {
+            console.log(`[Sidecar AI] Cancelled ${cancelled} request(s) for message ${messageId}`);
+        }
+    }
+
+    /**
+     * Cleanup all resources
+     */
+    cleanup() {
+        this.cancelAllRequests();
+        console.log('[Sidecar AI] AIClient cleanup complete');
     }
 }

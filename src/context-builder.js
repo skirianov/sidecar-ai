@@ -6,6 +6,55 @@
 export class ContextBuilder {
     constructor(context) {
         this.context = context;
+        // Performance: Request-scoped cache for context lookups
+        this._requestCache = null;
+    }
+
+    /**
+     * Start a new request cycle (clears previous cache)
+     */
+    startRequestCycle() {
+        this._requestCache = {
+            chatLog: null,
+            charData: null,
+            userData: null,
+            worldData: null
+        };
+    }
+
+    /**
+     * Clear request cache (called after processing completes)
+     */
+    clearRequestCycle() {
+        this._requestCache = null;
+    }
+
+    /**
+     * Heuristic: detect when the user already provided styling/markup directions.
+     * If true, we should NOT “beautify” (avoid adding extra design instructions).
+     */
+    userProvidedStyling(prompt = '') {
+        const p = String(prompt || '');
+        const pl = p.toLowerCase();
+        if (!pl.trim()) return false;
+
+        // Explicit markup / attributes / CSS mentions
+        if (pl.includes('<div') || pl.includes('<span') || pl.includes('<table') || pl.includes('<ul') || pl.includes('<ol') || pl.includes('<details') ||
+            pl.includes('style=') || pl.includes('class=') || pl.includes('<style') || pl.includes('html') || pl.includes('css')) {
+            return true;
+        }
+
+        // Explicit style intent keywords
+        const keywords = [
+            'background', 'background-color', 'color:', 'font', 'padding', 'margin', 'border', 'radius', 'shadow',
+            'layout', 'grid', 'flex', 'typography', 'tailwind', 'bootstrap',
+        ];
+        if (keywords.some(k => pl.includes(k))) return true;
+
+        // Explicit colors
+        if (/(#[0-9a-f]{3,8})\b/i.test(p) || /\brgba?\s*\(/i.test(p)) return true;
+
+        return false;
     }
 
     /**
@@ -46,131 +95,49 @@ export class ContextBuilder {
         const userPrompt = addon.prompt || '';
         const parts = [];
 
-        // CRITICAL: OOC instruction at the very beginning
-        parts.push('[OOC: CRITICAL INSTRUCTION - READ THIS FIRST]');
-        parts.push('You are a task executor. Your ONLY job is to follow the instruction block below.');
-        parts.push('DO NOT continue the story or roleplay.');
-        parts.push('DO NOT generate character dialogue or narrative continuation.');
-        parts.push('IGNORE the chat history for story purposes - it is provided ONLY for context reference.');
-        parts.push('ONLY execute what the instruction block explicitly asks you to do.');
-        parts.push('If the instruction asks you to add something to the response, add ONLY that - do not write new story content.');
-        parts.push('Any styling you will apply will be in the context of the chat - NEVER apply any styling that will affect global styles. No CSS blocks - ONLY inline styles. This is NON negotiable CRITICAL INSTRUCTION.');
-        parts.push('');
-        parts.push('OUTPUT FORMATTING:');
+        // Minimal contract to reduce instruction interference
+        parts.push('[SYSTEM CONTRACT]');
+        parts.push('- Follow the INSTRUCTION BLOCK exactly. Do not add extra content.');
+        parts.push('- Do NOT roleplay. Do NOT continue the story.');
+        parts.push('- Output ONLY the final requested content (no preface, no explanation, no code fences).');
+        parts.push('- SECURITY: No <script>, no <style>, no external CSS, no iframes/embeds/objects, no event handlers (onclick=...).');
 
         // Add format-specific instructions based on addon.formatStyle
         const formatStyle = addon.formatStyle || 'html-css';
+        const userHasStyling = this.userProvidedStyling(userPrompt);
 
         if (formatStyle === 'html-css') {
-            parts.push('FORMAT AS HTML + CSS:');
-            parts.push('- Output valid HTML with inline CSS styles.');
-            parts.push('- Use safe, theme-compatible styles that inherit from the chat theme.');
-            parts.push('- Use CSS variables like var(--SmartThemeEmColor) and var(--SmartThemeBorderColor) for colors.');
-            parts.push('- For comment sections: Use divs with class="sidecar-comment", style with rgba() backgrounds and theme colors.');
-            parts.push('- For structured content: Use divs with class="sidecar-content-card" for cards.');
-            parts.push('- ALWAYS use "color: inherit !important" and "font-family: inherit !important" to respect theme.');
-            parts.push('- NEVER use fixed colors or styles that override the theme.');
-            parts.push('- Example structure: <div class="sidecar-comment-section"><div class="sidecar-comment">...</div></div>');
             parts.push('');
-            parts.push('⚠️ CRITICAL COLOR & ACCESSIBILITY REQUIREMENTS (WCAG AA MANDATORY):');
-            parts.push('- MANDATORY: All text colors MUST have minimum 4.5:1 contrast ratio with their background (WCAG AA standard).');
-            parts.push('- NEVER use light gray (#aaa, #bbb, #ccc, #ddd, #eee) on light backgrounds - this FAILS WCAG.');
-            parts.push('- NEVER use dark gray (#444, #555, #666, #777) on dark backgrounds - this FAILS WCAG.');
-            parts.push('- FOR LIGHT BACKGROUNDS: Use DARK text colors: #000000, #1a1a1a, #2d2d2d, #333333 (contrast > 12:1).');
-            parts.push('- FOR DARK BACKGROUNDS: Use LIGHT text colors: #ffffff, #f0f0f0, #e8e8e8, #dddddd (contrast > 12:1).');
-            parts.push('- FOR COLORED BACKGROUNDS: If background is light (e.g., #f5f5f5, #e8e8e8), use DARK text (#000, #1a1a1a).');
-            parts.push('- FOR COLORED BACKGROUNDS: If background is dark (e.g., #2d2d2d, #1a1a1a), use LIGHT text (#fff, #f0f0f0).');
-            parts.push('- NEVER use rgba() with low opacity for text - always use solid colors with proper contrast.');
-            parts.push('- If you use colored backgrounds (purple, yellow, etc.), ensure text is either pure white (#ffffff) or pure black (#000000) for maximum contrast.');
-            parts.push('- TEST: Light gray text on pastel backgrounds = FAIL. Dark gray text on dark backgrounds = FAIL.');
-            parts.push('- REMEMBER: Better to use high-contrast colors than fail accessibility standards.');
-            parts.push('');
+            parts.push('[FORMAT]');
+            parts.push('- Output HTML only.');
+            parts.push('- One root element (prefer <div>).');
+            parts.push('- Inline styles only. No <style>. No external CSS.');
         } else if (formatStyle === 'xml') {
-            parts.push('FORMAT AS XML:');
-            parts.push('- Output well-formed XML with proper structure.');
-            parts.push('- Use meaningful tag names that describe the content.');
-            parts.push('- Include attributes where appropriate.');
-            parts.push('- Indent nested elements properly.');
-            parts.push('- Example: <response><item id="1">Content</item></response>');
             parts.push('');
+            parts.push('[FORMAT]');
+            parts.push('- Output well-formed XML only.');
         } else if (formatStyle === 'beautify') {
-            parts.push('FORMAT WITH DECORATIVE STYLING:');
-            parts.push('- Use creative formatting with visual elements.');
-            parts.push('- Apply decorative styles like cards, quotes, lists with custom bullets.');
-            parts.push('- Use emojis and symbols sparingly for visual interest.');
-            parts.push('- Structure content with clear visual hierarchy.');
-            parts.push('- Make it visually appealing while maintaining readability.');
             parts.push('');
-            parts.push('🚨🚨🚨 CRITICAL COLOR & ACCESSIBILITY REQUIREMENTS (WCAG AA MANDATORY - AUTOMATIC REJECTION IF VIOLATED):');
-            parts.push('');
-            parts.push('⚠️ YOUR OUTPUT WILL BE AUTOMATICALLY REJECTED AND FIXED IF YOU VIOLATE THESE RULES:');
-            parts.push('');
-            parts.push('RULE 1 - NEVER WHITE TEXT ON WHITE BACKGROUND:');
-            parts.push('- NEVER EVER use color:#fff, color:#ffffff, color:white, color:rgb(255,255,255) on backgrounds that are white, light gray, or any light color.');
-            parts.push('- If background is white (#fff, #ffffff, #f5f5f5, #f0f0f0, #e8e8e8, #fff3cd, or any light color), you MUST use DARK text: #000000 or #1a1a1a.');
-            parts.push('- NEVER use white text on light backgrounds - this is AUTOMATICALLY REJECTED.');
-            parts.push('');
-            parts.push('RULE 2 - NEVER LIGHT TEXT ON LIGHT BACKGROUNDS:');
-            parts.push('- NEVER use light gray (#aaa, #bbb, #ccc, #ddd, #eee, #f0f0f0, #f5f5f5, #ffffff) on light backgrounds - this FAILS WCAG.');
-            parts.push('- If background is light, you MUST use DARK text: #000000, #1a1a1a, #2d2d2d, #333333 (contrast > 12:1).');
-            parts.push('');
-            parts.push('RULE 3 - NEVER DARK TEXT ON DARK BACKGROUNDS:');
-            parts.push('- NEVER use dark gray (#444, #555, #666, #777, #888) on dark backgrounds - this FAILS WCAG.');
-            parts.push('- If background is dark (#2d2d2d, #1a1a1a, #343a40, #000000, or any dark color), you MUST use LIGHT text: #ffffff, #f0f0f0, #e8e8e8.');
-            parts.push('');
-            parts.push('RULE 4 - COLORED BACKGROUNDS:');
-            parts.push('- If background is light (e.g., #f5f5f5, #e8e8e8, #fff3cd, #e3f2fd, any pastel), use DARK text (#000000, #1a1a1a, #333333).');
-            parts.push('- If background is dark (e.g., #2d2d2d, #1a1a1a, #343a40, #1e3a8a), use LIGHT text (#ffffff, #f0f0f0, #e8e8e8).');
-            parts.push('- For colored backgrounds (purple, yellow, blue, etc.), use EITHER pure white (#ffffff) OR pure black (#000000) - choose based on background darkness.');
-            parts.push('');
-            parts.push('RULE 5 - NO LOW OPACITY TEXT:');
-            parts.push('- NEVER use rgba() with low opacity for text - always use solid colors with proper contrast.');
-            parts.push('- NEVER use opacity or transparency on text - always use solid #000000 or #ffffff.');
-            parts.push('');
-            parts.push('MANDATORY CHECKLIST BEFORE OUTPUTTING:');
-            parts.push('1. Check every style="..." attribute in your HTML.');
-            parts.push('2. If you see background:white, background:#fff, background:#ffffff, background:#f5f5f5, or any light background, you MUST use color:#000000.');
-            parts.push('3. If you see background:#000, background:#1a1a1a, background:#2d2d2d, or any dark background, you MUST use color:#ffffff.');
-            parts.push('4. If you see color:#fff or color:#ffffff, check the background - if background is light, CHANGE TEXT TO #000000.');
-            parts.push('5. If you see color:#000 or color:#000000, check the background - if background is dark, CHANGE TEXT TO #ffffff.');
-            parts.push('');
-            parts.push('⚠️ REMEMBER: White text on white background = AUTOMATIC REJECTION. Your output will be automatically fixed if you violate this.');
-            parts.push('⚠️ REMEMBER: Better to use high-contrast colors than fail accessibility standards.');
-            parts.push('⚠️ REMEMBER: If in doubt, use #000000 on light backgrounds and #ffffff on dark backgrounds.');
-            parts.push('');
-            parts.push('STYLE CONSISTENCY RULES:');
-            if (context.addonHistory) {
-                parts.push('- IMPORTANT: Review the "Previous Output History" section below to see your past styling choices.');
-                parts.push('- MAINTAIN THE SAME VISUAL STYLE as your previous outputs.');
-                parts.push('- Use the same color schemes, formatting patterns, and decorative elements.');
-                parts.push('- Keep your aesthetic consistent across all responses.');
+            parts.push('[FORMAT]');
+            parts.push('- Output HTML only.');
+            parts.push('- One root element (prefer <div>). Inline styles only. No <style>.');
+            if (userHasStyling) {
+                parts.push('- The instruction includes styling/markup directions: follow them exactly.');
+                parts.push('- Do NOT add extra decorative styling beyond what the instruction asks.');
             } else {
-                parts.push('- Choose a distinctive visual style and remember it for future responses.');
-                parts.push('- Be consistent with your formatting choices (colors, borders, spacing, etc.).');
+                parts.push('- The instruction does NOT specify styling: you MAY make it visually pleasant using simple layout/spacing/typography.');
+                parts.push('- Prefer neutral, theme-safe styling. Avoid hard-coded colors unless asked.');
+                if (context.addonHistory) {
+                    parts.push('- Keep the visual style consistent with previous outputs for this add-on.');
+                }
             }
-            parts.push('');
-            parts.push('AVATAR/IMAGE RULES:');
-            parts.push('- NEVER use placeholder image URLs (placeholder.com, via.placeholder, picsum, etc.).');
-            parts.push('- For avatars: Use emoji avatars (e.g., 🎭, 👤, 🤖) OR initials in colored circles.');
-            parts.push('- Initials example: <div style="width:40px;height:40px;border-radius:50%;background:#5e72e4;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:bold;">AB</div>');
-            parts.push('- Choose background colors that have high contrast with white text (dark, saturated colors work best).');
-            parts.push('- Example good contrast: Dark blue (#1e3a8a) background with white (#ffffff) text = PASS.');
-            parts.push('- Example bad contrast: Light gray (#e0e0e0) background with light gray (#aaa) text = FAIL.');
-            parts.push('- Example good contrast: Dark blue (#1e3a8a) background with white (#ffffff) text = PASS.');
-            parts.push('- Example bad contrast: Light gray (#e0e0e0) background with light gray (#aaa) text = FAIL.');
-            parts.push('');
         } else if (formatStyle === 'markdown') {
-            parts.push('FORMAT AS MARKDOWN:');
-            parts.push('- Use clean, standard Markdown formatting.');
-            parts.push('- Use ## or ### for headings.');
-            parts.push('- Use **bold** and *italic* for emphasis.');
-            parts.push('- Use - or * for unordered lists.');
-            parts.push('- Use 1. 2. 3. for ordered lists.');
-            parts.push('- Keep formatting simple and readable.');
             parts.push('');
+            parts.push('[FORMAT]');
+            parts.push('- Output Markdown only. No HTML.');
         }
 
-        parts.push('=== END OOC INSTRUCTION ===');
+        parts.push('[/SYSTEM CONTRACT]');
         parts.push('');
 
         // Always include chat history (controlled by messagesCount)
@@ -212,13 +179,9 @@ export class ContextBuilder {
         // User's instruction (the actual prompt) - THIS IS WHAT TO FOLLOW
         if (userPrompt.trim()) {
             parts.push('');
-            parts.push('═══════════════════════════════════════════════════════════');
-            parts.push('=== INSTRUCTION BLOCK - FOLLOW THIS STRICTLY ===');
-            parts.push('═══════════════════════════════════════════════════════════');
+            parts.push('=== INSTRUCTION BLOCK ===');
             parts.push(userPrompt);
-            parts.push('═══════════════════════════════════════════════════════════');
-            parts.push('');
-            parts.push('[OOC: Remember - ONLY execute the instruction above. Do NOT continue the story.]');
+            parts.push('=== END INSTRUCTION ===');
         }
 
         return parts.join('\n').trim();
@@ -239,18 +202,27 @@ export class ContextBuilder {
 
     /**
      * Get add-on history from chat log metadata
+     * Performance: Early exits, skips user messages immediately
      * Reads from message.extra.sidecarResults
      */
     getAddonHistory(chatLog, addonId, count) {
-        if (!chatLog || !Array.isArray(chatLog) || !addonId) {
+        if (!chatLog || !Array.isArray(chatLog) || !addonId || chatLog.length === 0) {
             return '';
         }
 
+        // Early exit: if chat log is shorter than requested count, limit search
+        const maxSearchLength = Math.min(chatLog.length, count * 3); // Heuristic: check up to 3x requested count
         const history = [];
 
         // Iterate backwards through chat log to find most recent history first
-        for (let i = chatLog.length - 1; i >= 0 && history.length < count; i--) {
+        // Performance: Start from end, skip user messages immediately, exit early when we have enough
+        for (let i = chatLog.length - 1; i >= 0 && history.length < count && (chatLog.length - i) <= maxSearchLength; i--) {
             const msg = chatLog[i];
+
+            // Performance: Skip user messages immediately (they don't have sidecar results)
+            if (msg?.is_user === true) {
+                continue;
+            }
 
             // Try current swipe variant first, then fall back to message.extra
             const swipeId = msg?.swipe_id ?? 0;
@@ -260,10 +232,9 @@ export class ContextBuilder {
                 const stored = sidecarResults[addonId];
                 if (stored.result && stored.result.length > 0 && stored.result.length < 100000) {
                     history.unshift(stored.result);
-                    continue;
+                    // Continue searching even if we found one (we want count results)
                 }
             }
-
         }
 
         if (history.length === 0) {
@@ -433,74 +404,109 @@ export class ContextBuilder {
 
     /**
      * Get chat log from context
+     * Performance: Uses request-scoped cache
      */
     getChatLog() {
+        // Check cache first
+        if (this._requestCache && this._requestCache.chatLog !== null) {
+            return this._requestCache.chatLog;
+        }
+
+        let chatLog = null;
         if (this.context.chat) {
-            return this.context.chat;
+            chatLog = this.context.chat;
+        } else if (this.context.chatLog) {
+            chatLog = this.context.chatLog;
+        } else if (this.context.currentChat) {
+            chatLog = this.context.currentChat;
+        } else {
+            chatLog = [];
         }
 
-        // Try alternative paths
-        if (this.context.chatLog) {
-            return this.context.chatLog;
+        // Cache result
+        if (this._requestCache) {
+            this._requestCache.chatLog = chatLog;
         }
 
-        if (this.context.currentChat) {
-            return this.context.currentChat;
-        }
-
-        return [];
+        return chatLog;
     }
 
     /**
      * Get character data from context
+     * Performance: Uses request-scoped cache
      */
     getCharData() {
+        // Check cache first
+        if (this._requestCache && this._requestCache.charData !== null) {
+            return this._requestCache.charData;
+        }
+
+        let charData = null;
         if (this.context.characters && this.context.characters[this.context.characterId]) {
-            return this.context.characters[this.context.characterId];
+            charData = this.context.characters[this.context.characterId];
+        } else if (this.context.character) {
+            charData = this.context.character;
+        } else if (this.context.currentCharacter) {
+            charData = this.context.currentCharacter;
         }
 
-        if (this.context.character) {
-            return this.context.character;
+        // Cache result
+        if (this._requestCache) {
+            this._requestCache.charData = charData;
         }
 
-        if (this.context.currentCharacter) {
-            return this.context.currentCharacter;
-        }
-
-        return null;
+        return charData;
     }
 
     /**
      * Get user data from context
+     * Performance: Uses request-scoped cache
      */
     getUserData() {
+        // Check cache first
+        if (this._requestCache && this._requestCache.userData !== null) {
+            return this._requestCache.userData;
+        }
+
+        let userData = null;
         if (this.context.user) {
-            return this.context.user;
+            userData = this.context.user;
+        } else if (this.context.userData) {
+            userData = this.context.userData;
         }
 
-        if (this.context.userData) {
-            return this.context.userData;
+        // Cache result
+        if (this._requestCache) {
+            this._requestCache.userData = userData;
         }
 
-        return null;
+        return userData;
     }
 
     /**
      * Get world data from context
+     * Performance: Uses request-scoped cache
      */
     getWorldData() {
+        // Check cache first
+        if (this._requestCache && this._requestCache.worldData !== null) {
+            return this._requestCache.worldData;
+        }
+
+        let worldData = null;
         if (this.context.world) {
-            return this.context.world;
+            worldData = this.context.world;
+        } else if (this.context.worldData) {
+            worldData = this.context.worldData;
+        } else if (this.context.worldInfo) {
+            worldData = this.context.worldInfo;
         }
 
-        if (this.context.worldData) {
-            return this.context.worldData;
+        // Cache result
+        if (this._requestCache) {
+            this._requestCache.worldData = worldData;
         }
 
-        if (this.context.worldInfo) {
-            return this.context.worldInfo;
-        }
-
-        return null;
+        return worldData;
     }
 }

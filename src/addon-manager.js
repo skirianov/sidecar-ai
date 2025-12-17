@@ -203,9 +203,11 @@ export class AddonManager {
             apiKey: addon.apiKey || '', // API key is required - validated in form
             apiUrl: addon.apiUrl || '', // Optional custom URL
             serviceProvider: addon.serviceProvider || [], // Array of service providers for OpenRouter
+            connectionProfileId: addon.connectionProfileId || '',
             resultFormat: addon.resultFormat || 'collapsible',
             responseLocation: addon.responseLocation || 'outsideChatlog',
             formatStyle: addon.formatStyle || 'html-css',
+            inlineMode: addon.inlineMode || 'off',
             contextSettings: {
                 messagesCount: addon.contextSettings?.messagesCount ?? this.defaultSettings.messagesCount,
                 includeCharCard: addon.contextSettings?.includeCharCard ?? this.defaultSettings.includeCharCard,
@@ -237,7 +239,9 @@ export class AddonManager {
 
         addonsToGroup.forEach(addon => {
             if (addon.requestMode === 'batch') {
-                const key = `${addon.aiProvider}:${addon.aiModel}`;
+                const key = addon.connectionProfileId
+                    ? `cm:${addon.connectionProfileId}`
+                    : `${addon.aiProvider}:${addon.aiModel}`;
                 if (!batchGroups[key]) {
                     batchGroups[key] = [];
                 }
