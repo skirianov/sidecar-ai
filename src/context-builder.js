@@ -350,17 +350,17 @@ export class ContextBuilder {
 
     /**
      * Format character card using SillyTavern's getCharacterCardFields() structure
-     * Matches SillyTavern's context_story_string template format:
-     * [Lore Scenario: {{scenario}}]
-     * [Main Lore/Characters: {{description}} Char card: {{personality}}]
-     * {{user}} Persona Sheet / Controlled Avatar [{{persona}}]
+     * 
+     * CRITICAL FORMAT:
+     * - `{{user}}` - {{persona}} (User's persona - escaped so AI sees literal placeholder)
+     * - `{{char}}` - {{description}} (Character's description - escaped so AI sees literal placeholder)
      * 
      * CRITICAL DISTINCTIONS:
      * - {{user}} = name1 = User's name (used in persona section)
      * - {{char}} = name2 = Character's name (this is the CHARACTER card being formatted)
      * 
-     * The character card fields from getCharacterCardFields() already have {{user}} and {{char}} 
-     * placeholders substituted by SillyTavern's baseChatReplace() via substituteParams()
+     * Placeholders are escaped with backticks so they appear literally in the prompt
+     * and the AI can clearly distinguish between user and character information
      */
     formatCharCard(charData) {
         // Use getCharacterCardFields() if available (preferred method)
@@ -369,40 +369,32 @@ export class ContextBuilder {
                 const cardFields = this.context.getCharacterCardFields();
                 const parts = [];
 
-                // CRITICAL: Follow SillyTavern's template structure order
-                // Note: getCharacterCardFields() already processes fields through baseChatReplace()
-                // which calls substituteParams(name1, name2), so {{user}} and {{char}} are already substituted
+                // CRITICAL: Format with escaped placeholders so AI sees them literally
+                // Use backticks to escape {{user}} and {{char}} so they won't be replaced
 
-                // 1. Scenario section (if present)
+                // 1. User Persona section: `{{user}}` - {{persona}}
+                // CRITICAL: This is the USER's persona ({{user}} = name1)
+                if (cardFields.persona) {
+                    // Escape the placeholder with backticks so it appears literally
+                    parts.push(`\`{{user}}\` - ${cardFields.persona}`);
+                }
+
+                // 2. Character Description section: `{{char}}` - {{description}}
+                // CRITICAL: This is the CHARACTER's description ({{char}} = name2)
+                // NOTE: Removed personality field as requested
+                if (cardFields.description) {
+                    // Escape the placeholder with backticks so it appears literally
+                    parts.push(`\`{{char}}\` - ${cardFields.description}`);
+                }
+
+                // 3. Scenario section (if present)
                 if (cardFields.scenario) {
                     parts.push(`[Lore Scenario:\n${cardFields.scenario}]`);
                 }
 
-                // 2. Description and Personality section (Main Lore/Characters)
-                // CRITICAL: These fields describe the CHARACTER ({{char}} = name2)
-                const descriptionParts = [];
-                if (cardFields.description) {
-                    descriptionParts.push(cardFields.description);
-                }
-                if (cardFields.personality) {
-                    descriptionParts.push(`Char card:\n${cardFields.personality}`);
-                }
-                if (descriptionParts.length > 0) {
-                    parts.push(`[Main Lore/Characters:\n${descriptionParts.join('\n\n')}]`);
-                }
-
-                // 3. System prompt (if present)
+                // 4. System prompt (if present)
                 if (cardFields.system) {
                     parts.push(cardFields.system);
-                }
-
-                // 4. User Persona section ({{user}} Persona Sheet)
-                // CRITICAL: This is the USER's persona ({{user}} = name1), not the character's
-                // The persona field already has {{user}} substituted by SillyTavern
-                if (cardFields.persona) {
-                    // Get name1 ({{user}}) to ensure it's in the header even if persona field doesn't include it
-                    const name1 = this.context?.name1 || '{{user}}';
-                    parts.push(`${name1} Persona Sheet / Controlled Avatar\n[${cardFields.persona}]`);
                 }
 
                 // 5. Message examples
@@ -441,21 +433,29 @@ export class ContextBuilder {
 
         const parts = [];
 
-        // Fallback order using direct character data fields
+        // CRITICAL: Format with escaped placeholders matching the preferred method
+        // Get persona from power_user settings if available
+        if (this.context?.powerUserSettings?.persona_description) {
+            const persona = this.context.powerUserSettings.persona_description.trim();
+            if (persona) {
+                // Escape placeholder with backticks: `{{user}}` - {{persona}}
+                parts.push(`\`{{user}}\` - ${persona}`);
+            }
+        }
+
+        // Character description: `{{char}}` - {{description}}
+        if (charData.description) {
+            // Escape placeholder with backticks so it appears literally
+            parts.push(`\`{{char}}\` - ${charData.description}`);
+        }
+
+        // Additional fields (no personality as requested)
         if (charData.data?.system_prompt) {
             parts.push(charData.data.system_prompt);
         }
 
-        if (charData.description) {
-            parts.push(charData.description);
-        }
-
-        if (charData.personality) {
-            parts.push(charData.personality);
-        }
-
         if (charData.scenario || charData.data?.scenario) {
-            parts.push(charData.scenario || charData.data.scenario);
+            parts.push(`[Lore Scenario:\n${charData.scenario || charData.data.scenario}]`);
         }
 
         if (charData.data?.post_history_instructions) {
