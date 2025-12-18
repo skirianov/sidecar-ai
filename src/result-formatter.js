@@ -829,6 +829,7 @@ export class ResultFormatter {
      */
     injectIntoDropdown(addon, formattedResult, messageId = null, existingElement = null) {
         try {
+            console.log(`[Sidecar AI] injectIntoDropdown called for addon: ${addon?.name}, messageId: ${messageId}`);
             // Use provided messageId or get from latest message
             if (!messageId) {
                 // Best-effort fallback: use latest AI message element's mesid or last chat index.
@@ -1908,12 +1909,14 @@ export class ResultFormatter {
         try {
             const allContainers = document.querySelectorAll('.sidecar-container');
             let hiddenCount = 0;
-            allContainers.forEach(container => {
+            console.log(`[Sidecar AI] hideAllSidecarCards called with excludeMessageId: ${excludeMessageId}, found ${allContainers.length} containers`);
+            allContainers.forEach((container, index) => {
                 // Skip containers that have excludeMessageId if provided
                 if (excludeMessageId !== null) {
                     const messageElement = container.closest('.mes, .message');
                     if (messageElement) {
                         const mesid = messageElement.getAttribute('mesid');
+                        console.log(`[Sidecar AI] Container ${index}: mesid=${mesid}, excludeMessageId=${excludeMessageId}`);
                         if (mesid && (mesid === excludeMessageId.toString() || parseInt(mesid) === excludeMessageId)) {
                             console.log(`[Sidecar AI] Skipping hide for active message ${excludeMessageId}`);
                             return;
@@ -1923,6 +1926,7 @@ export class ResultFormatter {
 
                 // Use display: none instead of remove() so we can restore later
                 if (container.style.display !== 'none') {
+                    console.log(`[Sidecar AI] Hiding container ${index}`);
                     container.style.display = 'none';
                     hiddenCount++;
                 }
@@ -2058,6 +2062,7 @@ export class ResultFormatter {
      */
     showSidecarCardsForMessage(messageId) {
         try {
+            console.log(`[Sidecar AI] showSidecarCardsForMessage called with messageId: ${messageId}`);
             // If messageId is a number (index), get the actual message from chat log
             let targetMessageId = messageId;
             if (typeof messageId === 'number') {
@@ -2080,8 +2085,10 @@ export class ResultFormatter {
 
             // Find all sidecar containers for this message
             const containers = messageElement.querySelectorAll('.sidecar-container');
+            console.log(`[Sidecar AI] Found ${containers.length} containers for message ${targetMessageId}`);
             let shownCount = 0;
-            containers.forEach(container => {
+            containers.forEach((container, index) => {
+                console.log(`[Sidecar AI] Container ${index}: display=${container.style.display}, hasContent=${!!container.innerHTML.trim()}`);
                 // Only show if it's actually hidden and has content (prevent showing empty containers)
                 if (container.style.display === 'none' && container.innerHTML.trim()) {
                     container.style.display = '';

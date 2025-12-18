@@ -128,9 +128,10 @@ export class EventHandler {
                     if (!eventType) return;
                     eventSource.on(eventType, (data) => {
                         try {
+                            console.log(`[Sidecar AI] Received ${eventType} event with data:`, data);
                             // Skip swipe handling during generation to prevent conflicts
                             if (this._isGenerating) {
-                                console.log('[Sidecar AI] Skipping swipe event during generation');
+                                console.log('[Sidecar AI] Skipping swipe event during generation (_isGenerating = true)');
                                 return;
                             }
 
@@ -138,12 +139,17 @@ export class EventHandler {
                             const idx = (typeof data === 'number' && Number.isInteger(data))
                                 ? data
                                 : (typeof data === 'string' && data.trim() !== '' && !Number.isNaN(Number(data)) ? Number(data) : null);
-                            if (idx === null) return;
+                            if (idx === null) {
+                                console.log('[Sidecar AI] Invalid swipe event data, skipping');
+                                return;
+                            }
 
+                            console.log(`[Sidecar AI] Processing swipe event for message index: ${idx}`);
                             // Handle swipe events directly
                             this.resultFormatter?.handleSwipeVariantChange?.(idx, this.addonManager);
                         } catch (e) {
                             // Best-effort UI restoration
+                            console.error('[Sidecar AI] Error handling swipe event:', e);
                         }
                     });
                 });
@@ -307,6 +313,7 @@ export class EventHandler {
      * Handle message received event
      */
     async handleMessageReceived(data) {
+        console.log(`[Sidecar AI] handleMessageReceived called with data:`, data);
         if (this.isProcessing) {
             // Reliability: don't drop the event; coalesce and run after current finishes.
             this._pendingMessageEvent = data;
@@ -316,7 +323,7 @@ export class EventHandler {
 
         try {
             this.isProcessing = true;
-            console.log('[Sidecar AI] Message received event fired', data);
+            console.log('[Sidecar AI] Message received event processing started', data);
 
             const chatLog = this.contextBuilder.getChatLog();
             const { chatIndex, message: resolvedMessage } = this.resolveMessageRefFromEvent(data);
