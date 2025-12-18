@@ -1962,6 +1962,7 @@ export class ResultFormatter {
                 return;
             }
 
+
             // Get the message from chat log
             const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
             if (!Array.isArray(chatLog) || messageIndex >= chatLog.length) {
@@ -1980,8 +1981,23 @@ export class ResultFormatter {
 
             console.log(`[Sidecar AI] Message ${messageIndex} (ID: ${messageId}) is now on swipe variant ${swipeId}`);
 
-            // First, hide all sidecar cards globally (but exclude the current message to prevent flicker)
-            this.hideAllSidecarCards(messageId);
+            // Check if this swipe variant has stored results
+            const hasStoredResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults;
+            const hasResults = hasStoredResults && Object.keys(hasStoredResults).length > 0;
+
+            if (hasResults) {
+                // Only hide other containers if we actually have results to show for this variant
+                // This prevents unnecessary hide/show cycles when there are no stored sidecars
+                console.log(`[Sidecar AI] Found ${Object.keys(hasStoredResults).length} stored result(s) for variant ${swipeId}, hiding other containers`);
+                this.hideAllSidecarCards(messageId);
+            } else {
+                console.log(`[Sidecar AI] No stored results for variant ${swipeId}, skipping global hide`);
+            }
+
+            if (!hasResults) {
+                // No stored results, nothing to do
+                return;
+            }
 
             // Find the message element (try multiple methods for robustness)
             const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(messageIndex);
@@ -2009,34 +2025,27 @@ export class ResultFormatter {
 
             console.log(`[Sidecar AI] Cleared sidecar container for message ${messageId}, variant ${swipeId}`);
 
-            // If this is a new swipe (empty), we leave it empty.
-            // If it's an existing swipe with stored results, we render them below.
+            // Render the stored sidecars for this variant
+            console.log(`[Sidecar AI] Found ${Object.keys(hasStoredResults).length} stored sidecar(s) for variant ${swipeId}`);
 
-            // Check if this swipe variant has saved sidecars
-            const hasStoredResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults;
+            // Restore sidecars for this variant
+            const allAddons = addonManager.getAllAddons();
 
-            if (hasStoredResults && Object.keys(hasStoredResults).length > 0) {
-                console.log(`[Sidecar AI] Found ${Object.keys(hasStoredResults).length} stored sidecar(s) for variant ${swipeId}`);
+            for (const addon of allAddons) {
+                if (!addon.enabled) continue;
 
-                // Restore sidecars for this variant
-                const allAddons = addonManager.getAllAddons();
+                const stored = hasStoredResults[addon.id];
+                if (!stored) continue;
 
-                for (const addon of allAddons) {
-                    if (!addon.enabled) continue;
-
-                    const stored = hasStoredResults[addon.id];
-                    if (!stored) continue;
-
-                    if (addon.responseLocation === 'outsideChatlog') {
-                        const formatted = this.formatResult(addon, stored.result, message, true);
-                        this.injectIntoDropdown(addon, formatted, messageId, messageElement);
-                    }
+                if (addon.responseLocation === 'outsideChatlog') {
+                    const formatted = this.formatResult(addon, stored.result, message, true);
+                    this.injectIntoDropdown(addon, formatted, messageId, messageElement);
                 }
-
-                // Ensure inline projection + display_text are consistent after restoration.
-                // This keeps the UI clean even if message.mes contains an inline region.
-                this.applyInlineSidecarResultsToMessage(message);
             }
+
+            // Ensure inline projection + display_text are consistent after restoration.
+            // This keeps the UI clean even if message.mes contains an inline region.
+            this.applyInlineSidecarResultsToMessage(message);
         } catch (error) {
             console.error('[Sidecar AI] Error handling swipe variant change:', error);
         }

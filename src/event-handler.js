@@ -14,6 +14,8 @@ export class EventHandler {
         // Reliability: if multiple ST events fire rapidly, don't drop them.
         // We coalesce to "latest event wins" and run it after current processing ends.
         this._pendingMessageEvent = null;
+        // Prevent swipe handling during generation to avoid conflicts
+        this._isGenerating = false;
         // Performance: Debounce save operations
         this.saveChatTimeout = null;
         // Prevent double-processing the same message id
@@ -126,13 +128,19 @@ export class EventHandler {
                     if (!eventType) return;
                     eventSource.on(eventType, (data) => {
                         try {
+                            // Skip swipe handling during generation to prevent conflicts
+                            if (this._isGenerating) {
+                                console.log('[Sidecar AI] Skipping swipe event during generation');
+                                return;
+                            }
+
                             // data is expected to be mesid/chat index
                             const idx = (typeof data === 'number' && Number.isInteger(data))
                                 ? data
                                 : (typeof data === 'string' && data.trim() !== '' && !Number.isNaN(Number(data)) ? Number(data) : null);
                             if (idx === null) return;
 
-                            // Handle swipe events directly - debouncing was causing issues
+                            // Handle swipe events directly
                             this.resultFormatter?.handleSwipeVariantChange?.(idx, this.addonManager);
                         } catch (e) {
                             // Best-effort UI restoration
@@ -149,6 +157,7 @@ export class EventHandler {
                 if (generationStartedEvent) {
                     eventSource.on(generationStartedEvent, () => {
                         try {
+                            this._isGenerating = true;
                             const chatLog = this.contextBuilder.getChatLog();
                             if (!Array.isArray(chatLog) || chatLog.length === 0) return;
                             const idx = chatLog.length - 1;
@@ -170,6 +179,7 @@ export class EventHandler {
                 if (generationEndedEvent) {
                     eventSource.on(generationEndedEvent, () => {
                         try {
+                            this._isGenerating = false;
                             const chatLog = this.contextBuilder.getChatLog();
                             if (Array.isArray(chatLog) && chatLog.length > 0) {
                                 // Run against latest message index (mesid)
@@ -178,6 +188,10 @@ export class EventHandler {
                                     this.handleMessageReceived(chatLog.length - 1);
                                 }, 150);
                             }
+                            // Clear generation flag after a delay to prevent swipe interference
+                            setTimeout(() => {
+                                this._isGenerating = false;
+                            }, 500);
                         } catch (e) {
                             console.error(`[Sidecar AI] Error in ${generationEndedEvent} fallback:`, e);
                         }
