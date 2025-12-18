@@ -95,36 +95,13 @@ export class ContextBuilder {
         const settings = addon.contextSettings || {};
         let userPrompt = addon.prompt || '';
 
-        // CRITICAL: Substitute {{user}} and {{char}} placeholders using SillyTavern's substitution
-        // {{user}} = name1 (user's name)
-        // {{char}} = name2 (character's name)
-        if (this.context && typeof this.context.substituteParamsExtended === 'function') {
-            try {
-                // Get name1 and name2 from context
-                const name1 = this.context.name1 || '';
-                const name2 = this.context.name2 || '';
-
-                // Use substituteParamsExtended to replace placeholders
-                // This handles {{user}}, {{char}}, and other SillyTavern placeholders
-                userPrompt = this.context.substituteParamsExtended(userPrompt, {
-                    user: name1,
-                    char: name2,
-                    name1: name1,
-                    name2: name2
-                });
-            } catch (error) {
-                console.warn('[Sidecar AI] Error substituting placeholders in prompt:', error);
-            }
-        } else if (this.context && typeof this.context.substituteParams === 'function') {
-            // Fallback to substituteParams if substituteParamsExtended not available
-            try {
-                const name1 = this.context.name1 || '';
-                const name2 = this.context.name2 || '';
-                userPrompt = this.context.substituteParams(userPrompt, name1, name2);
-            } catch (error) {
-                console.warn('[Sidecar AI] Error substituting placeholders (fallback):', error);
-            }
-        }
+        // CRITICAL: DO NOT substitute {{user}} and {{char}} in the instruction block
+        // These placeholders should remain LITERAL so the AI can see them as placeholders
+        // The character card already has escaped placeholders (`{{user}}` and `{{char}}`)
+        // Substitution would replace them with actual names, which we don't want
+        // 
+        // If users want substitution, they can use name1/name2 directly in their prompts
+        // But {{user}} and {{char}} should remain as literal placeholders for clarity
 
         const parts = [];
 
