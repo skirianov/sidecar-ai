@@ -83,21 +83,28 @@ export class EventHandler {
                 const messageEvents = [
                     event_types.MESSAGE_RECEIVED,
                     event_types.MESSAGE_SENT,
+                    // Regenerate/swipe changes typically come through MESSAGE_SWIPED (payload is mesid/chat index)
+                    event_types.MESSAGE_SWIPED,
                     event_types.CHAT_MESSAGE_RECEIVED,
                     event_types.CHAT_MESSAGE_SENT,
+                    event_types.CHAT_MESSAGE_SWIPED,
                     'MESSAGE_RECEIVED',
-                    'MESSAGE_SENT'
+                    'MESSAGE_SENT',
+                    'MESSAGE_SWIPED',
+                    // Some builds use lowercase event names
+                    'message_swiped'
                 ].filter(Boolean); // Remove undefined values
 
                 messageEvents.forEach(eventType => {
                     if (eventType) {
                         eventSource.on(eventType, (data) => {
                             try {
-                                // For MESSAGE_SENT, wait a bit to ensure message is in chat array
-                                if (eventType === event_types.MESSAGE_SENT || eventType === 'MESSAGE_SENT') {
+                                // For MESSAGE_SENT / MESSAGE_SWIPED, wait a bit to ensure chat array + swipe_id are updated
+                                if (eventType === event_types.MESSAGE_SENT || eventType === 'MESSAGE_SENT' ||
+                                    eventType === event_types.MESSAGE_SWIPED || eventType === 'MESSAGE_SWIPED' || eventType === 'message_swiped') {
                                     setTimeout(() => {
                                         this.handleMessageReceived(data);
-                                    }, 100);
+                                    }, 150);
                                 } else {
                                     this.handleMessageReceived(data);
                                 }

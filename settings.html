@@ -183,8 +183,8 @@
                 </div>
 
                 <div class="add_ons_form_row">
-                    <div class="add_ons_form_group">
-                        <label for="add_ons_form_result_format">Result Format * <i class="fa-solid fa-circle-question" title="How should results be formatted when injected into chat history? (Only matters for 'Chat History' location)" style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
+                    <div class="add_ons_form_group" id="add_ons_result_format_group">
+                        <label for="add_ons_form_result_format">Result Format (Chat History only) <i class="fa-solid fa-circle-question" title="Only used when Response Location is Chat History. Controls how the result is written into the message." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
                         <select id="add_ons_form_result_format" name="resultFormat" class="text_pole" required>
                             <option value="collapsible" selected>Collapsible - Click to expand/collapse</option>
                             <option value="separate">Separate Block - Visible with separators</option>
@@ -196,27 +196,27 @@
                     </div>
 
                     <div class="add_ons_form_group">
-                        <label for="add_ons_form_response_location">Response Location * <i class="fa-solid fa-circle-question" title="Where should results appear in the UI? Outside Chatlog (recommended): Clean cards below messages. Use Inline Mode to make the main AI see sidecar output in context." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
+                        <label for="add_ons_form_response_location">Response Location <i class="fa-solid fa-circle-question" title="Where should results appear in the UI? Outside Chatlog is recommended for a clean UI. Use “Main AI visibility” to control whether the main AI sees sidecar output in context." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
                         <select id="add_ons_form_response_location" name="responseLocation" class="text_pole" required>
-                            <option value="outsideChatlog" selected>Outside Chatlog - Clean cards below chat</option>
+                            <option value="outsideChatlog" selected>Outside Chatlog (recommended) - Clean cards below message</option>
                             <option value="chatHistory">Chat History (legacy) - Writes into message</option>
                         </select>
                         <small class="add_ons_form_hint" id="add_ons_response_location_hint">
-                            Outside: Shows in card below message (clean, doesn't clutter chat)
+                            Outside: Shows in card below message (clean). Turn on “Main AI visibility” if you want the main AI to see the sidecar output in context.
                         </small>
                     </div>
                 </div>
 
-                <div class="add_ons_form_row">
-                    <div class="add_ons_form_group" style="grid-column: 1 / -1;">
-                        <label for="add_ons_form_inline_mode">Inline Mode (Main AI Visibility) <i class="fa-solid fa-circle-question" title="Off: Sidecar results stay in cards/metadata only. Inline: Sidecar results are appended to the AI message content for context (the main AI can see it), while the UI still shows clean cards." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
+                <div class="add_ons_form_row" id="add_ons_inline_mode_row">
+                    <div class="add_ons_form_group" id="add_ons_inline_mode_group" style="grid-column: 1 / -1;">
+                        <label for="add_ons_form_inline_mode">Main AI visibility <i class="fa-solid fa-circle-question" title="Controls whether sidecar results are added to the message text for context (so the main AI can see them). This only applies when Response Location is Outside Chatlog." style="font-size: 0.9em; opacity: 0.7; cursor: help;"></i></label>
                         <select id="add_ons_form_inline_mode" name="inlineMode" class="text_pole" required>
-                            <option value="off" selected>Off - Keep main AI unaware (recommended)</option>
-                            <option value="append">Inline - Append to message for context</option>
-                            <option value="replaceBlock">Inline - Replace inline block (idempotent)</option>
+                            <option value="off" selected>Off - Main AI does not see sidecar output</option>
+                            <option value="replaceBlock">On (recommended) - Replace inline block (idempotent)</option>
+                            <option value="append">On (advanced) - Append to message (can grow context)</option>
                         </select>
                         <small class="add_ons_form_hint" id="add_ons_inline_mode_hint">
-                            Off: Sidecar output is only shown in cards. Inline: Sidecar output is added to the message for context (main AI can see it).
+                            Recommended: keep UI “Outside Chatlog” and toggle Main AI visibility only when you explicitly want the main AI to use sidecar output as context.
                         </small>
                     </div>
                 </div>
@@ -224,16 +224,14 @@
                 <div style="grid-column: 1 / -1; margin-bottom: 15px; padding: 12px; background: rgba(59,130,246,0.1); border: 1px solid #3b82f6; border-radius: 8px; font-size: 0.9em;">
                     <strong style="color: #3b82f6;"><i class="fa-solid fa-lightbulb"></i> Quick Explanation:</strong>
                     <div style="margin-top: 8px; line-height: 1.5;">
-                        <strong>Result Format</strong> (only for Chat History location):<br>
-                        • <strong>Collapsible:</strong> <code>&lt;details&gt;&lt;summary&gt;Name&lt;/summary&gt;content&lt;/details&gt;</code> - Click to expand<br>
-                        • <strong>Separate Block:</strong> <code>--- Name ---<br>content<br>---</code> - Always visible with borders<br>
-                        • <strong>Append:</strong> Content flows directly into message - No wrapper<br><br>
-                        
-                        <strong>Response Location:</strong><br>
-                        • <strong>Outside Chatlog:</strong> Shows in nice card below message (doesn't clutter, always expandable)<br>
-                        • <strong>Chat History:</strong> Injected INTO the message as HTML comment (main AI can reference it)<br><br>
-                        
-                        <em style="opacity: 0.8;">💡 Tip: Use "Outside Chatlog" for 99% of cases - it's cleaner!</em>
+                        <strong>Recommended setup:</strong><br>
+                        • <strong>Response Location:</strong> Outside Chatlog (clean cards below the message)<br>
+                        • <strong>Main AI visibility:</strong> Off by default (turn on only when you want the main AI to use sidecar output as context)<br><br>
+
+                        <strong>Legacy setup:</strong><br>
+                        • <strong>Chat History:</strong> Writes into the message (can clutter; Result Format applies here)<br><br>
+
+                        <em style="opacity: 0.8;">Tip: Prefer “Outside Chatlog” + optionally enable “Main AI visibility”.</em>
                     </div>
                 </div>
 

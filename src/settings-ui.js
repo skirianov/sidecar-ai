@@ -7,6 +7,37 @@ export class SettingsUI {
         this.selectedAddons = new Set(); // Track selected add-ons for bulk operations
     }
 
+    /**
+     * Response Location controls which nearby settings are relevant.
+     * - outsideChatlog: show "Main AI visibility" (inlineMode), hide Result Format
+     * - chatHistory: show Result Format, hide "Main AI visibility"
+     */
+    updateResponseLocationDependentUI(location = null) {
+        const selected = location || $('#add_ons_form_response_location').val() || 'outsideChatlog';
+        const isChatHistory = selected === 'chatHistory';
+
+        // Toggle visibility (IDs live in settings.html)
+        const $resultFormatGroup = $('#add_ons_result_format_group');
+        const $inlineModeRow = $('#add_ons_inline_mode_row');
+        if ($resultFormatGroup.length) $resultFormatGroup.toggle(isChatHistory);
+        if ($inlineModeRow.length) $inlineModeRow.toggle(!isChatHistory);
+
+        // Keep values consistent: inline mode doesn't apply to Chat History.
+        if (isChatHistory) {
+            $('#add_ons_form_inline_mode').val('off');
+        }
+
+        // Keep the hint aligned with the UI wording.
+        const hint = $('#add_ons_response_location_hint');
+        if (hint.length) {
+            if (isChatHistory) {
+                hint.text('Chat History (legacy): Writes into the message content. Result Format applies here. Prefer “Outside Chatlog” + optionally enable “Main AI visibility” for a cleaner UI.');
+            } else {
+                hint.text('Outside: Shows in a card below the message (clean). Enable “Main AI visibility” if you want the main AI to see the sidecar output in context.');
+            }
+        }
+    }
+
     init() {
         if (this.initialized) return;
 
@@ -230,12 +261,7 @@ export class SettingsUI {
         $(document).off('change.sidecar', '#add_ons_form_response_location').on('change.sidecar', '#add_ons_form_response_location', function (e) {
             e.stopPropagation();
             const location = $(this).val();
-            const hint = $('#add_ons_response_location_hint');
-            if (location === 'chatHistory') {
-                hint.text('Chat History (legacy): Writes into the message content. Prefer "Outside Chatlog" + "Inline Mode" for cleaner UI.');
-            } else {
-                hint.text('Outside: Shows in a card below the message. Use "Inline Mode" if you want the main AI to see the sidecar output in context.');
-            }
+            self.updateResponseLocationDependentUI(location);
         });
 
         // Prevent modal content clicks from closing modal (stop propagation)
@@ -607,6 +633,11 @@ export class SettingsUI {
             $('#add_ons_form_id').val('');
             $('#add_ons_modal_title').text('Create New Sidecar');
             $('#add_ons_form_save').text('Create Sidecar');
+            // Defaults: clean UI + main AI unaware.
+            $('#add_ons_form_response_location').val('outsideChatlog');
+            $('#add_ons_form_inline_mode').val('off');
+            $('#add_ons_form_result_format').val('collapsible');
+            this.updateResponseLocationDependentUI('outsideChatlog');
             // Populate connection profiles dropdown (if available)
             this.loadConnectionProfiles('');
             // Hide trigger config and regex tester
@@ -1388,6 +1419,7 @@ export class SettingsUI {
         $('#add_ons_form_response_location').val(addon.responseLocation);
         $('#add_ons_form_format_style').val(addon.formatStyle || 'html-css');
         $('#add_ons_form_inline_mode').val(addon.inlineMode || 'off');
+        this.updateResponseLocationDependentUI(addon.responseLocation);
 
         // Load models for provider, then set selected model
         // Pass the model to set so it can be applied after dropdown is populated
@@ -1814,6 +1846,11 @@ export class SettingsUI {
 
             // serviceProvider is already defined above (line 982), reuse it
 
+            const responseLocation = $('#add_ons_form_response_location').val();
+            const inlineModeRaw = $('#add_ons_form_inline_mode').val() || 'off';
+            // Inline mode only applies to Outside Chatlog. If user chose Chat History, force it off.
+            const inlineMode = responseLocation === 'chatHistory' ? 'off' : inlineModeRaw;
+
             const formData = {
                 id: $('#add_ons_form_id').val(),
                 name: $('#add_ons_form_name').val(),
@@ -1834,9 +1871,9 @@ export class SettingsUI {
                 serviceProvider: serviceProvider, // Array of service providers for OpenRouter
                 connectionProfileId: $('#add_ons_form_connection_profile').val() || '',
                 resultFormat: $('#add_ons_form_result_format').val(),
-                responseLocation: $('#add_ons_form_response_location').val(),
+                responseLocation: responseLocation,
                 formatStyle: $('#add_ons_form_format_style').val() || 'html-css',
-                inlineMode: $('#add_ons_form_inline_mode').val() || 'off',
+                inlineMode: inlineMode,
                 contextSettings: {
                     messagesCount: parseInt($('#add_ons_form_messages_count').val()) || 10,
                     includeCharCard: $('#add_ons_form_include_char_card').is(':checked'),
