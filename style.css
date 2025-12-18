@@ -6,14 +6,81 @@
 /* Settings Container */
 #sidecar_ai_settings {
     width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 #sidecar_ai_settings .sidecar_settings_content {
-    padding: 10px;
+    padding: 15px;
+    box-sizing: border-box;
 }
 
 #sidecar_ai_settings hr {
-    margin: 15px 0;
+    margin: 20px 0;
+    border: none;
+    border-top: 1px solid var(--SmartThemeBorderColor);
+}
+
+/* Large screen optimizations */
+@media (min-width: 1400px) {
+    .add_ons_modal_content {
+        max-width: 750px;
+    }
+
+    .add_ons_list {
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 15px;
+    }
+
+    #sidecar_ai_settings .sidecar_settings_content {
+        padding: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+}
+
+/* Extra large screens - prevent excessive width */
+@media (min-width: 1920px) {
+    .add_ons_modal_content {
+        max-width: 800px;
+    }
+
+    .add_ons_list {
+        grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        gap: 18px;
+    }
+
+    #sidecar_ai_settings .sidecar_settings_content {
+        max-width: 1600px;
+    }
+}
+
+/* Ensure proper touch targets on all devices */
+.menu_button {
+    min-height: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* Improve focus states for accessibility */
+.menu_button:focus,
+.text_pole:focus,
+.add_ons_checkbox_label input:focus {
+    outline: 2px solid var(--SmartThemeEmColor);
+    outline-offset: 2px;
+}
+
+/* Ensure modal backdrop covers everything */
+.add_ons_modal::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: inherit;
+    backdrop-filter: inherit;
+    z-index: -1;
 }
 
 /* Controls */
@@ -268,10 +335,29 @@
     align-items: center;
     justify-content: center;
     backdrop-filter: blur(3px);
+    /* Ensure modal covers the entire viewport */
+    width: 100vw;
+    height: 100vh;
+    /* Prevent horizontal scrolling */
+    overflow-x: hidden;
+    /* Smooth animations */
+    animation: modalFadeIn 0.2s ease-out;
+}
+
+/* Modal fade in animation */
+@keyframes modalFadeIn {
+    from {
+        opacity: 0;
+        backdrop-filter: blur(0px);
+    }
+    to {
+        opacity: 1;
+        backdrop-filter: blur(3px);
+    }
 }
 
 .add_ons_modal_content {
-    width: 90%;
+    width: min(90vw, 700px);
     max-width: 700px;
     max-height: 90vh;
     border: 1px solid var(--SmartThemeBorderColor);
@@ -280,6 +366,8 @@
     display: flex;
     flex-direction: column;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+    /* Ensure content doesn't overflow */
+    box-sizing: border-box;
 }
 
 .add_ons_modal_header {
@@ -349,6 +437,7 @@
     display: block;
     margin-bottom: 5px;
     font-weight: bold;
+    font-size: 0.95em;
 }
 
 .add_ons_form_hint {
@@ -697,15 +786,37 @@
 }
 
 /* Responsive */
+@media (max-width: 1200px) {
+    /* Large tablets and small desktops */
+    .add_ons_list {
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+    }
+
+    .add_ons_modal_content {
+        max-width: 650px;
+    }
+}
+
 @media (max-width: 1024px) {
+    /* Tablets */
     .add_ons_item_actions {
         gap: 2px;
     }
-    
+
     .add_ons_item_actions .menu_button {
         padding: 5px;
         min-width: 26px;
         height: 26px;
+    }
+
+    .add_ons_list {
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 10px;
+    }
+
+    .add_ons_modal_content {
+        max-width: 600px;
     }
 }
 
@@ -713,10 +824,11 @@
     .add_ons_form_row {
         grid-template-columns: 1fr;
     }
-    
+
     /* Mobile modal behavior:
-       - Avoid "centered + tall content" pushing header off-screen
-       - Avoid iOS Safari vh issues by using overlay scrolling and dvh where supported
+       - Position modal with proper spacing from top to avoid header being cut off
+       - Use flexible layout that adapts to content height
+       - Ensure modal is accessible and scrollable
     */
     .add_ons_modal {
         align-items: flex-start;
@@ -724,42 +836,48 @@
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
         padding:
-            max(10px, env(safe-area-inset-top))
+            max(20px, env(safe-area-inset-top) + 10px)
             max(10px, env(safe-area-inset-right))
-            max(10px, env(safe-area-inset-bottom))
+            max(20px, env(safe-area-inset-bottom))
             max(10px, env(safe-area-inset-left));
         box-sizing: border-box;
+        /* Better positioning: start from a reasonable top position instead of absolute top */
+        padding-top: max(20px, calc(env(safe-area-inset-top) + 10px + 2vh));
     }
 
     .add_ons_modal_content {
         width: 95%;
-        /* Use dynamic viewport units when available (prevents address-bar overlap) */
-        max-height: 92dvh;
+        /* Use dynamic viewport units and limit height to ensure header stays visible */
+        max-height: min(88dvh, calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 40px));
         margin: 0;
+        /* Ensure content doesn't overflow horizontally on small screens */
+        box-sizing: border-box;
     }
 
     .add_ons_modal_body {
         -webkit-overflow-scrolling: touch;
+        /* Ensure proper padding for mobile */
+        padding: 20px;
     }
-    
+
     .add_ons_list {
         grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     }
-    
+
     .add_ons_item {
         padding: 10px;
     }
-    
+
     .add_ons_item_header {
         flex-direction: column;
         align-items: stretch;
         gap: 8px;
     }
-    
+
     .add_ons_item_select {
         align-self: flex-start;
     }
-    
+
     .add_ons_item_actions {
         justify-content: flex-start;
         margin-left: 0;
@@ -768,25 +886,84 @@
 
 @media (max-width: 480px) {
     .add_ons_modal_content {
-        max-height: 96dvh;
+        max-height: min(96dvh, calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 20px));
         width: 100%;
         border-radius: 12px;
     }
-    
+
     .add_ons_modal_body {
         padding: 15px;
     }
-    
+
+    .add_ons_modal_header {
+        padding: 12px 15px;
+    }
+
+    .add_ons_modal_footer {
+        padding: 12px 15px;
+        gap: 8px;
+    }
+
     .add_ons_list {
         grid-template-columns: 1fr;
+        gap: 8px;
     }
-    
+
     .add_ons_item {
         padding: 8px;
     }
-    
+
     .add_ons_item_actions .menu_button {
         min-width: 32px;
         height: 32px;
+        padding: 6px;
+    }
+
+    /* Improve form spacing on small screens */
+    .add_ons_form_group {
+        margin-bottom: 12px;
+    }
+
+    .add_ons_form_row {
+        gap: 12px;
+    }
+
+    /* Make buttons more touch-friendly */
+    .menu_button {
+        min-height: 40px;
+        padding: 8px 12px;
+    }
+
+    /* Adjust text sizes for better readability */
+    .add_ons_form_hint {
+        font-size: 0.8em;
+        line-height: 1.4;
+    }
+
+    /* Better spacing for checkboxes */
+    .add_ons_form_checkboxes {
+        gap: 6px;
+    }
+
+    .add_ons_checkbox_label {
+        padding: 6px 0;
+        font-size: 0.9em;
+    }
+
+    /* Improve textarea and input sizing on mobile */
+    .text_pole {
+        font-size: 16px; /* Prevent zoom on iOS */
+        line-height: 1.4;
+    }
+
+    textarea.text_pole {
+        resize: vertical;
+        min-height: 80px;
+    }
+
+    /* Better button spacing on mobile */
+    .add_ons_modal_footer .menu_button {
+        flex: 1;
+        min-height: 44px; /* iOS touch target minimum */
     }
 }

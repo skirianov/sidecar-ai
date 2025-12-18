@@ -25,6 +25,11 @@ export class EventHandler {
         this.queuedTriggers = new Set(); // Set of addon IDs queued to run
         // Performance: Store fallback observer for cleanup
         this.fallbackObserver = null;
+
+        // Fix: Add debouncing for swipe events to prevent race conditions with generation events
+        this._swipeDebounceTimeout = null;
+        this._lastSwipeMessageIndex = null;
+        this._swipeDebounceMs = 200; // Debounce swipe events for 200ms to avoid conflicts with generation events
     }
 
     /**
@@ -130,13 +135,10 @@ export class EventHandler {
                                 ? data
                                 : (typeof data === 'string' && data.trim() !== '' && !Number.isNaN(Number(data)) ? Number(data) : null);
                             if (idx === null) return;
-                            // IMPORTANT: SillyTavern may emit message_swiped after the swipe animation completes,
-                            // including after a newly generated swipe variant is rendered. We must not "hide all"
-                            // here or we can make freshly injected cards disappear ("puff").
-                            //
-                            // Use the variant-change handler: it clears only this message's container and restores
-                            // stored sidecars for the currently active swipe_id (no AI calls).
-                            this.resultFormatter?.handleSwipeVariantChange?.(idx, this.addonManager);
+
+                            // Fix: Debounce swipe events to prevent race conditions with generation events
+                            // Multiple rapid swipe events can conflict with GENERATION_ENDED processing
+                            this._debounceSwipeEvent(idx);
                         } catch (e) {
                             // Best-effort UI restoration
                         }
@@ -273,6 +275,34 @@ export class EventHandler {
     }
 
     /**
+     * Debounce swipe events to prevent race conditions with generation events
+     * @param {number} messageIndex - The message index that was swiped
+     */
+    _debounceSwipeEvent(messageIndex) {
+        // Clear any existing timeout
+        if (this._swipeDebounceTimeout) {
+            clearTimeout(this._swipeDebounceTimeout);
+        }
+
+        // Store the latest message index
+        this._lastSwipeMessageIndex = messageIndex;
+
+        // Set up debounced execution
+        this._swipeDebounceTimeout = setTimeout(() => {
+            if (this._lastSwipeMessageIndex !== null) {
+                // IMPORTANT: SillyTavern may emit message_swiped after the swipe animation completes,
+                // including after a newly generated swipe variant is rendered. We must not "hide all"
+                // here or we can make freshly injected cards disappear ("puff").
+                //
+                // Use the variant-change handler: it clears only this message's container and restores
+                // stored sidecars for the currently active swipe_id (no AI calls).
+                this.resultFormatter?.handleSwipeVariantChange?.(this._lastSwipeMessageIndex, this.addonManager);
+                this._lastSwipeMessageIndex = null;
+            }
+        }, this._swipeDebounceMs);
+    }
+
+    /**
      * Cleanup all resources (observers, timeouts, etc.)
      */
     cleanup() {
@@ -283,6 +313,12 @@ export class EventHandler {
         if (this.saveChatTimeout) {
             clearTimeout(this.saveChatTimeout);
             this.saveChatTimeout = null;
+        }
+
+        // Clear swipe debounce timeout
+        if (this._swipeDebounceTimeout) {
+            clearTimeout(this._swipeDebounceTimeout);
+            this._swipeDebounceTimeout = null;
         }
 
         // Clear queued triggers
