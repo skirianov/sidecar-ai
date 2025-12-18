@@ -714,8 +714,32 @@
         grid-template-columns: 1fr;
     }
     
+    /* Mobile modal behavior:
+       - Avoid "centered + tall content" pushing header off-screen
+       - Avoid iOS Safari vh issues by using overlay scrolling and dvh where supported
+    */
+    .add_ons_modal {
+        align-items: flex-start;
+        justify-content: center;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        padding:
+            max(10px, env(safe-area-inset-top))
+            max(10px, env(safe-area-inset-right))
+            max(10px, env(safe-area-inset-bottom))
+            max(10px, env(safe-area-inset-left));
+        box-sizing: border-box;
+    }
+
     .add_ons_modal_content {
         width: 95%;
+        /* Use dynamic viewport units when available (prevents address-bar overlap) */
+        max-height: 92dvh;
+        margin: 0;
+    }
+
+    .add_ons_modal_body {
+        -webkit-overflow-scrolling: touch;
     }
     
     .add_ons_list {
@@ -744,7 +768,9 @@
 
 @media (max-width: 480px) {
     .add_ons_modal_content {
-        max-height: 95vh;
+        max-height: 96dvh;
+        width: 100%;
+        border-radius: 12px;
     }
     
     .add_ons_modal_body {
