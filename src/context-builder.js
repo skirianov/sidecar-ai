@@ -363,110 +363,86 @@ export class ContextBuilder {
      * and the AI can clearly distinguish between user and character information
      */
     formatCharCard(charData) {
-        // Use getCharacterCardFields() if available (preferred method)
-        if (this.context && typeof this.context.getCharacterCardFields === 'function') {
+        // CRITICAL: Get RAW character data BEFORE substitution to preserve {{user}} and {{char}} placeholders
+        // getCharacterCardFields() already substitutes placeholders, so we need raw data
+        const rawCharData = charData || this.getCharData();
+
+        if (rawCharData && this.context) {
             try {
-                const cardFields = this.context.getCharacterCardFields();
                 const parts = [];
 
                 // CRITICAL: Format with escaped placeholders so AI sees them literally
                 // Use backticks to escape {{user}} and {{char}} so they won't be replaced
+                // Get RAW fields before any substitution happens
 
                 // 1. User Persona section: `{{user}}` - {{persona}}
                 // CRITICAL: This is the USER's persona ({{user}} = name1)
-                if (cardFields.persona) {
+                // Get persona from power_user settings (raw, before substitution)
+                const rawPersona = this.context.powerUserSettings?.persona_description;
+                if (rawPersona && rawPersona.trim()) {
                     // Escape the placeholder with backticks so it appears literally
-                    parts.push(`\`{{user}}\` - ${cardFields.persona}`);
+                    parts.push(`\`{{user}}\` - ${rawPersona.trim()}`);
                 }
 
                 // 2. Character Description section: `{{char}}` - {{description}}
                 // CRITICAL: This is the CHARACTER's description ({{char}} = name2)
+                // Get RAW description before substitution
                 // NOTE: Removed personality field as requested
-                if (cardFields.description) {
+                const rawDescription = rawCharData.description;
+                if (rawDescription && rawDescription.trim()) {
                     // Escape the placeholder with backticks so it appears literally
-                    parts.push(`\`{{char}}\` - ${cardFields.description}`);
+                    parts.push(`\`{{char}}\` - ${rawDescription.trim()}`);
                 }
 
-                // 3. Scenario section (if present)
-                if (cardFields.scenario) {
-                    parts.push(`[Lore Scenario:\n${cardFields.scenario}]`);
+                // 3. Scenario section (if present) - get raw scenario
+                const rawScenario = rawCharData.scenario || rawCharData.data?.scenario;
+                if (rawScenario && rawScenario.trim()) {
+                    parts.push(`[Lore Scenario:\n${rawScenario.trim()}]`);
                 }
 
-                // 4. System prompt (if present)
-                if (cardFields.system) {
-                    parts.push(cardFields.system);
+                // 4. System prompt (if present) - get raw system prompt
+                const rawSystem = rawCharData.data?.system_prompt;
+                if (rawSystem && rawSystem.trim()) {
+                    parts.push(rawSystem.trim());
                 }
 
-                // 5. Message examples
-                if (cardFields.mesExamples) {
-                    parts.push(cardFields.mesExamples);
+                // 5. Message examples - get raw mes_example
+                const rawMesExamples = rawCharData.mes_example;
+                if (rawMesExamples && rawMesExamples.trim()) {
+                    parts.push(rawMesExamples.trim());
                 }
 
-                // 6. Jailbreak/post-history instructions
-                if (cardFields.jailbreak) {
-                    parts.push(cardFields.jailbreak);
+                // 6. Jailbreak/post-history instructions - get raw post_history_instructions
+                const rawJailbreak = rawCharData.data?.post_history_instructions;
+                if (rawJailbreak && rawJailbreak.trim()) {
+                    parts.push(rawJailbreak.trim());
                 }
 
-                // 7. Additional fields
-                if (cardFields.version) {
-                    parts.push(`Version: ${cardFields.version}`);
+                // 7. Additional fields - get raw data
+                const rawVersion = rawCharData.data?.character_version;
+                if (rawVersion) {
+                    parts.push(`Version: ${rawVersion}`);
                 }
 
-                if (cardFields.charDepthPrompt) {
-                    parts.push(cardFields.charDepthPrompt);
+                const rawCharDepthPrompt = rawCharData.data?.extensions?.depth_prompt?.prompt;
+                if (rawCharDepthPrompt && rawCharDepthPrompt.trim()) {
+                    parts.push(rawCharDepthPrompt.trim());
                 }
 
-                if (cardFields.creatorNotes) {
-                    parts.push(cardFields.creatorNotes);
+                const rawCreatorNotes = rawCharData.data?.creator_notes;
+                if (rawCreatorNotes && rawCreatorNotes.trim()) {
+                    parts.push(rawCreatorNotes.trim());
                 }
 
                 return parts.join('\n\n') || 'No character card data available.';
             } catch (error) {
-                console.warn('[Sidecar AI] Error using getCharacterCardFields(), falling back to direct charData:', error);
+                console.warn('[Sidecar AI] Error formatting character card:', error);
+                // Fall through to return empty string if error occurs
             }
         }
 
-        // Fallback: Use direct charData if getCharacterCardFields() is not available
-        if (!charData) {
-            return '';
-        }
-
-        const parts = [];
-
-        // CRITICAL: Format with escaped placeholders matching the preferred method
-        // Get persona from power_user settings if available
-        if (this.context?.powerUserSettings?.persona_description) {
-            const persona = this.context.powerUserSettings.persona_description.trim();
-            if (persona) {
-                // Escape placeholder with backticks: `{{user}}` - {{persona}}
-                parts.push(`\`{{user}}\` - ${persona}`);
-            }
-        }
-
-        // Character description: `{{char}}` - {{description}}
-        if (charData.description) {
-            // Escape placeholder with backticks so it appears literally
-            parts.push(`\`{{char}}\` - ${charData.description}`);
-        }
-
-        // Additional fields (no personality as requested)
-        if (charData.data?.system_prompt) {
-            parts.push(charData.data.system_prompt);
-        }
-
-        if (charData.scenario || charData.data?.scenario) {
-            parts.push(`[Lore Scenario:\n${charData.scenario || charData.data.scenario}]`);
-        }
-
-        if (charData.data?.post_history_instructions) {
-            parts.push(charData.data.post_history_instructions);
-        }
-
-        if (charData.mes_example) {
-            parts.push(charData.mes_example);
-        }
-
-        return parts.join('\n\n') || 'No character card data available.';
+        // If we get here, either no rawCharData or no context
+        return '';
     }
 
     /**
