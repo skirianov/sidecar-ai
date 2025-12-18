@@ -11,6 +11,9 @@ export class EventHandler {
         this.aiClient = aiClient;
         this.resultFormatter = resultFormatter;
         this.isProcessing = false;
+        // Reliability: if multiple ST events fire rapidly, don't drop them.
+        // We coalesce to "latest event wins" and run it after current processing ends.
+        this._pendingMessageEvent = null;
         // Performance: Debounce save operations
         this.saveChatTimeout = null;
         // Prevent double-processing the same message id
@@ -231,7 +234,9 @@ export class EventHandler {
      */
     async handleMessageReceived(data) {
         if (this.isProcessing) {
-            console.log('[Sidecar AI] Already processing, skipping...');
+            // Reliability: don't drop the event; coalesce and run after current finishes.
+            this._pendingMessageEvent = data;
+            console.log('[Sidecar AI] Already processing, queued latest event');
             return;
         }
 
@@ -339,6 +344,7 @@ export class EventHandler {
 
             // 2. Get queued trigger add-ons
             const queuedAddons = [];
+            const queuedIdsToClear = [];
             if (this.queuedTriggers.size > 0) {
                 console.log(`[Sidecar AI] Found ${this.queuedTriggers.size} queued trigger(s)`);
                 // Use a Set for O(1) lookup when checking enabled addons
@@ -348,11 +354,13 @@ export class EventHandler {
                         const addon = this.addonManager.getAddon(id);
                         if (addon && addon.enabled) {
                             queuedAddons.push(addon);
+                            queuedIdsToClear.push(id);
                         }
                     }
                 });
-                // Clear queue immediately so we don't re-process if something fails/retries
-                this.queuedTriggers.clear();
+                // Reliability: do NOT clear the queue yet.
+                // If we fail before we actually process add-ons (or we skip due to dedupe),
+                // we want triggers to still fire on the next AI message.
             }
 
             // Combine lists
@@ -378,34 +386,79 @@ export class EventHandler {
             // Wait a bit to ensure AI message is fully rendered in DOM
             await new Promise(resolve => setTimeout(resolve, 300));
 
-            // Prefer the message referenced by the event payload; fall back to latest AI message.
-            const aiMessage = (!this.isUserMessage(message) && message && typeof message === 'object') ? message : this.getLatestMessage();
-            if (!aiMessage) {
-                console.warn('[Sidecar AI] Could not find AI message after delay, skipping');
+            // Canonical message id for Sidecar pipeline MUST be SillyTavern chat index (mesid).
+            // This is what MESSAGE_* events use, what DOM nodes use (`mesid` attr), and what swipe events pass.
+            // Never treat 0 as falsy; it is a valid message id.
+            let aiMessageId = (chatIndex !== null && chatIndex !== undefined) ? chatIndex : null;
+            if (aiMessageId === null) {
+                // Try to map by reference into chat log (best-effort; may be -1 if different object instance)
+                // Prefer resolved message (event payload) for mapping, not the stale aiMessage reference.
+                const refMsg = resolvedMessage && typeof resolvedMessage === 'object' ? resolvedMessage : message;
+                if (Array.isArray(chatLog) && refMsg && typeof refMsg === 'object') {
+                    const idx = chatLog.indexOf(refMsg);
+                    if (idx >= 0) aiMessageId = idx;
+                }
+            }
+            if (aiMessageId === null) {
+                // Last resort: map from DOM attribute of the latest AI message element
+                const el = this.resultFormatter.findMessageElement?.(chatLog?.length - 1) || this.resultFormatter.findAIMessageElement?.();
+                const mesidAttr = el?.getAttribute?.('mesid');
+                if (mesidAttr !== null && mesidAttr !== undefined && mesidAttr !== '' && !Number.isNaN(Number(mesidAttr))) {
+                    aiMessageId = Number(mesidAttr);
+                }
+            }
+
+            // IMPORTANT: Always re-read the canonical message object from chatLog by mesid.
+            // This avoids 50/50 races where the event gives us a stale object reference (old swipe_id)
+            // while the actual chatLog entry already has a new swipe variant.
+            let canonicalAiMessage = null;
+            if (aiMessageId !== null && Array.isArray(chatLog) && aiMessageId >= 0 && aiMessageId < chatLog.length) {
+                canonicalAiMessage = chatLog[aiMessageId] || null;
+            }
+            if (!canonicalAiMessage) {
+                // Fallback to latest AI message (should be rare; but better than skipping).
+                canonicalAiMessage = this.getLatestMessage();
+            }
+            if (!canonicalAiMessage) {
+                console.warn('[Sidecar AI] Could not resolve canonical AI message after delay, skipping');
                 return;
             }
 
-            // Avoid processing the same message twice (unless swipe variant changed)
-            const aiMessageId = (chatIndex !== null && chatIndex !== undefined) ? chatIndex : this.resultFormatter.getMessageId(aiMessage);
-            const aiSwipeId = aiMessage.swipe_id ?? 0;
+            const aiSwipeId = canonicalAiMessage.swipe_id ?? 0;
 
-            if (aiMessageId &&
+            if (aiMessageId !== null &&
                 aiMessageId === this.lastProcessedMessageId &&
                 aiSwipeId === this.lastProcessedSwipeId) {
                 console.log(`[Sidecar AI] Message ${aiMessageId} (swipe ${aiSwipeId}) already processed, skipping`);
                 return;
             }
 
-            // Process add-ons with the confirmed AI message
-            await this.processAddons(uniqueAddons, aiMessage);
+            // Process add-ons with the confirmed AI message.
+            // IMPORTANT: downstream should treat messageId as the chat index (mesid).
+            await this.processAddons(uniqueAddons, canonicalAiMessage, aiMessageId);
+
+            // Now that processing completed successfully, clear any queued trigger ids we consumed.
+            if (queuedIdsToClear.length > 0) {
+                queuedIdsToClear.forEach(id => this.queuedTriggers.delete(id));
+            }
 
             // Record the processed message id and swipe id
-            this.lastProcessedMessageId = aiMessageId || this.lastProcessedMessageId;
+            if (aiMessageId !== null) {
+                this.lastProcessedMessageId = aiMessageId;
+            }
             this.lastProcessedSwipeId = aiSwipeId;
         } catch (error) {
             console.error('[Sidecar AI] Error handling message:', error);
         } finally {
             this.isProcessing = false;
+            // If an event came in while we were processing, run it now (async, to unwind stack).
+            if (this._pendingMessageEvent !== null) {
+                const pending = this._pendingMessageEvent;
+                this._pendingMessageEvent = null;
+                setTimeout(() => {
+                    this.handleMessageReceived(pending);
+                }, 0);
+            }
         }
     }
 
@@ -559,8 +612,10 @@ export class EventHandler {
                 return;
             }
 
+            const chatLog = this.contextBuilder.getChatLog();
             const message = this.getLatestMessage();
-            await this.processAddons(addonsToProcess, message);
+            const messageId = Array.isArray(chatLog) ? chatLog.indexOf(message) : null;
+            await this.processAddons(addonsToProcess, message, messageId >= 0 ? messageId : null);
         } catch (error) {
             console.error('[Add-Ons Extension] Error triggering add-ons:', error);
             throw error;
@@ -609,7 +664,7 @@ export class EventHandler {
             }
 
             // Re-process
-            await this.processStandaloneAddon(addon, message);
+            await this.processStandaloneAddon(addon, message, numericId);
 
         } catch (error) {
             console.error('[Sidecar AI] Error retrying add-on:', error);
@@ -621,7 +676,7 @@ export class EventHandler {
     /**
      * Process add-ons
      */
-    async processAddons(addons, message) {
+    async processAddons(addons, message, messageId = null) {
         if (!addons || addons.length === 0) {
             return;
         }
@@ -636,9 +691,9 @@ export class EventHandler {
             // Process all groups and standalone addons in parallel
             const promises = [
                 // Process batch groups
-                ...grouped.batch.map(batchGroup => this.processBatchGroup(batchGroup, message)),
+                ...grouped.batch.map(batchGroup => this.processBatchGroup(batchGroup, message, messageId)),
                 // Process standalone add-ons
-                ...grouped.standalone.map(addon => this.processStandaloneAddon(addon, message))
+                ...grouped.standalone.map(addon => this.processStandaloneAddon(addon, message, messageId))
             ];
 
             await Promise.all(promises);
@@ -651,15 +706,15 @@ export class EventHandler {
     /**
      * Process a batch group
      */
-    async processBatchGroup(addons, message) {
+    async processBatchGroup(addons, message, messageId = null) {
         try {
             console.log(`[Sidecar AI] Processing batch group: ${addons.length} add-on(s)`);
 
-            const messageId = this.resultFormatter.getMessageId(message);
+            const canonicalMessageId = messageId !== null && messageId !== undefined ? messageId : this.resultFormatter.getMessageId(message);
 
             // Show loading indicators for all add-ons
             addons.forEach(addon => {
-                this.resultFormatter.showLoadingIndicator(messageId, addon);
+                this.resultFormatter.showLoadingIndicator(canonicalMessageId, addon);
             });
 
             // Build contexts for all add-ons
@@ -684,7 +739,7 @@ export class EventHandler {
             });
 
             // Send batch request
-            const responses = await this.aiClient.sendBatchToAI(addons, prompts, messageId);
+            const responses = await this.aiClient.sendBatchToAI(addons, prompts, canonicalMessageId);
 
             // Process each response
             for (let i = 0; i < addons.length; i++) {
@@ -692,19 +747,19 @@ export class EventHandler {
                 const response = responses[i] || '';
 
                 // Hide loading indicator
-                this.resultFormatter.hideLoadingIndicator(messageId, addon);
+                this.resultFormatter.hideLoadingIndicator(canonicalMessageId, addon);
 
                 if (response) {
-                    await this.injectResult(addon, response, message);
+                    await this.injectResult(addon, response, message, canonicalMessageId);
                 }
             }
         } catch (error) {
             console.error('[Sidecar AI] Error processing batch group:', error);
-            const messageId = this.resultFormatter.getMessageId(message);
+            const canonicalMessageId = messageId !== null && messageId !== undefined ? messageId : this.resultFormatter.getMessageId(message);
 
             addons.forEach(addon => {
-                this.resultFormatter.hideLoadingIndicator(messageId, addon);
-                this.resultFormatter.showErrorIndicator(messageId, addon, error);
+                this.resultFormatter.hideLoadingIndicator(canonicalMessageId, addon);
+                this.resultFormatter.showErrorIndicator(canonicalMessageId, addon, error);
             });
         }
     }
@@ -712,13 +767,13 @@ export class EventHandler {
     /**
      * Process standalone add-on
      */
-    async processStandaloneAddon(addon, message) {
+    async processStandaloneAddon(addon, message, messageId = null) {
         try {
             console.log(`[Sidecar AI] Processing standalone add-on: ${addon.name}`);
 
             // Show loading indicator BEFORE processing
-            const messageId = this.resultFormatter.getMessageId(message);
-            this.resultFormatter.showLoadingIndicator(messageId, addon);
+            const canonicalMessageId = messageId !== null && messageId !== undefined ? messageId : this.resultFormatter.getMessageId(message);
+            this.resultFormatter.showLoadingIndicator(canonicalMessageId, addon);
 
             // Build context
             const chatLog = this.contextBuilder.getChatLog();
@@ -738,39 +793,39 @@ export class EventHandler {
             const prompt = this.contextBuilder.buildPrompt(addon, context);
 
             // Send to AI
-            const response = await this.aiClient.sendToAI(addon, prompt, 0, messageId);
+            const response = await this.aiClient.sendToAI(addon, prompt, 0, canonicalMessageId);
 
             // Hide loading and inject result
-            this.resultFormatter.hideLoadingIndicator(messageId, addon);
+            this.resultFormatter.hideLoadingIndicator(canonicalMessageId, addon);
 
             if (response) {
-                await this.injectResult(addon, response, message);
+                await this.injectResult(addon, response, message, canonicalMessageId);
             }
         } catch (error) {
             console.error(`[Sidecar AI] Error processing add-on ${addon.name}:`, error);
-            const messageId = this.resultFormatter.getMessageId(message);
-            this.resultFormatter.hideLoadingIndicator(messageId, addon);
-            this.resultFormatter.showErrorIndicator(messageId, addon, error);
+            const canonicalMessageId = messageId !== null && messageId !== undefined ? messageId : this.resultFormatter.getMessageId(message);
+            this.resultFormatter.hideLoadingIndicator(canonicalMessageId, addon);
+            this.resultFormatter.showErrorIndicator(canonicalMessageId, addon, error);
         }
     }
 
     /**
      * Inject result based on response location setting
      */
-    async injectResult(addon, response, message) {
+    async injectResult(addon, response, message, messageId = null) {
         console.log(`[Sidecar AI] Injecting result for ${addon.name}, location: ${addon.responseLocation}`);
-        const messageId = this.resultFormatter.getMessageId(message);
+        const canonicalMessageId = messageId !== null && messageId !== undefined ? messageId : this.resultFormatter.getMessageId(message);
 
         if (addon.responseLocation === 'chatHistory') {
-            console.log(`[Sidecar AI] Injecting into chat history for message: ${messageId}`);
+            console.log(`[Sidecar AI] Injecting into chat history for message: ${canonicalMessageId}`);
             const formatted = this.resultFormatter.formatResult(addon, response, message, false);
-            this.resultFormatter.injectIntoChatHistory(messageId, addon, formatted, message);
+            this.resultFormatter.injectIntoChatHistory(canonicalMessageId, addon, formatted, message);
         } else {
             // For outsideChatlog, inject inside chat after the message (with dropdown UI)
             // Don't wrap in extra structure - we already have details element
             console.log(`[Sidecar AI] Injecting into dropdown inside chat for: ${addon.name}`);
             const formatted = this.resultFormatter.formatResult(addon, response, message, true);
-            const success = this.resultFormatter.injectIntoDropdown(addon, formatted, messageId);
+            const success = this.resultFormatter.injectIntoDropdown(addon, formatted, canonicalMessageId);
             if (!success) {
                 console.error(`[Sidecar AI] Failed to inject result into dropdown for: ${addon.name}`);
             }
