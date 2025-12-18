@@ -19,6 +19,9 @@ export class EventHandler {
         // Prevent double-processing the same message id
         this.lastProcessedMessageId = null;
         this.lastProcessedSwipeId = null;
+        // Regeneration can reuse the same message index + swipe_id (often 0).
+        // Track a per-variant fingerprint to avoid skipping regenerated content.
+        this.lastProcessedVariantFingerprint = null;
         this.queuedTriggers = new Set(); // Set of addon IDs queued to run
         // Performance: Store fallback observer for cleanup
         this.fallbackObserver = null;
@@ -432,10 +435,18 @@ export class EventHandler {
             }
 
             const aiSwipeId = canonicalAiMessage.swipe_id ?? 0;
+            // Fingerprint: prefer gen_finished (regenerate updates this), then send_date, then a fallback.
+            // This helps ensure regeneration triggers even if messageId+swipeId stays the same.
+            const variantFingerprint = [
+                aiMessageId,
+                aiSwipeId,
+                canonicalAiMessage.gen_finished ?? canonicalAiMessage.send_date ?? canonicalAiMessage?.extra?.gen_id ?? ''
+            ].join(':');
 
             if (aiMessageId !== null &&
                 aiMessageId === this.lastProcessedMessageId &&
-                aiSwipeId === this.lastProcessedSwipeId) {
+                aiSwipeId === this.lastProcessedSwipeId &&
+                variantFingerprint === this.lastProcessedVariantFingerprint) {
                 console.log(`[Sidecar AI] Message ${aiMessageId} (swipe ${aiSwipeId}) already processed, skipping`);
                 return;
             }
@@ -454,6 +465,7 @@ export class EventHandler {
                 this.lastProcessedMessageId = aiMessageId;
             }
             this.lastProcessedSwipeId = aiSwipeId;
+            this.lastProcessedVariantFingerprint = variantFingerprint;
         } catch (error) {
             console.error('[Sidecar AI] Error handling message:', error);
         } finally {
