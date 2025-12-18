@@ -139,6 +139,8 @@ export class AIClient {
                 }
 
                 // Build messages array with system instruction
+                // NOTE: Prompt should already have {{user}} and {{char}} placeholders substituted by ContextBuilder
+                // {{user}} = name1 (user's name), {{char}} = name2 (character's name)
                 let messages;
                 if (Array.isArray(prompt)) {
                     messages = prompt;
@@ -155,7 +157,7 @@ export class AIClient {
                         },
                         {
                             role: 'user',
-                            content: prompt
+                            content: prompt // Prompt already has {{user}} and {{char}} substituted
                         }
                     ];
                 }

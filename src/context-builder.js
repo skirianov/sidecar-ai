@@ -89,10 +89,43 @@ export class ContextBuilder {
      * Build prompt with automatic context inclusion
      * Context sections are automatically included based on checkboxes
      * User's prompt is just the instruction, no variables needed
+     * CRITICAL: Uses substituteParamsExtended to replace {{user}} and {{char}} placeholders
      */
     buildPrompt(addon, context) {
         const settings = addon.contextSettings || {};
-        const userPrompt = addon.prompt || '';
+        let userPrompt = addon.prompt || '';
+
+        // CRITICAL: Substitute {{user}} and {{char}} placeholders using SillyTavern's substitution
+        // {{user}} = name1 (user's name)
+        // {{char}} = name2 (character's name)
+        if (this.context && typeof this.context.substituteParamsExtended === 'function') {
+            try {
+                // Get name1 and name2 from context
+                const name1 = this.context.name1 || '';
+                const name2 = this.context.name2 || '';
+
+                // Use substituteParamsExtended to replace placeholders
+                // This handles {{user}}, {{char}}, and other SillyTavern placeholders
+                userPrompt = this.context.substituteParamsExtended(userPrompt, {
+                    user: name1,
+                    char: name2,
+                    name1: name1,
+                    name2: name2
+                });
+            } catch (error) {
+                console.warn('[Sidecar AI] Error substituting placeholders in prompt:', error);
+            }
+        } else if (this.context && typeof this.context.substituteParams === 'function') {
+            // Fallback to substituteParams if substituteParamsExtended not available
+            try {
+                const name1 = this.context.name1 || '';
+                const name2 = this.context.name2 || '';
+                userPrompt = this.context.substituteParams(userPrompt, name1, name2);
+            } catch (error) {
+                console.warn('[Sidecar AI] Error substituting placeholders (fallback):', error);
+            }
+        }
+
         const parts = [];
 
         // Minimal contract to reduce instruction interference
@@ -193,11 +226,13 @@ export class ContextBuilder {
 
     /**
      * Build combined prompt for batch requests
+     * CRITICAL: Each prompt has {{user}} and {{char}} placeholders substituted via buildPrompt()
+     * {{user}} = name1, {{char}} = name2
      */
     buildBatchPrompt(addons, contexts) {
         const prompts = addons.map((addon, index) => {
             const context = contexts[index];
-            const prompt = this.buildPrompt(addon, context);
+            const prompt = this.buildPrompt(addon, context); // Already has placeholders substituted
             return `=== ${addon.name} ===\n${prompt}`;
         });
 
@@ -266,15 +301,29 @@ export class ContextBuilder {
 
     /**
      * Format messages for prompt
+     * CRITICAL: Distinguishes between {{user}} (name1) and {{char}} (name2)
+     * - User messages: msg.is_user === true, name should be name1 ({{user}})
+     * - Character messages: msg.is_user === false, name should be name2 ({{char}})
      */
     formatMessages(messages) {
         if (!messages || messages.length === 0) {
             return 'No previous messages.';
         }
 
+        // Get name1 ({{user}}) and name2 ({{char}}) from context for clarity
+        const name1 = this.context?.name1 || 'User';
+        const name2 = this.context?.name2 || 'Character';
+
         return messages.map((msg, index) => {
-            const name = msg.name || 'Unknown';
+            // Use actual name from message, but clarify role
+            // If message doesn't have name, use context names as fallback
+            let name = msg.name;
+            if (!name) {
+                name = msg.is_user ? name1 : name2;
+            }
+
             const text = msg.mes || '';
+            // CRITICAL: Clear distinction - User = {{user}}/name1, Character = {{char}}/name2
             const role = msg.is_user ? 'User' : 'Character';
             return `[${role}] ${name}: ${text}`;
         }).join('\n');
@@ -300,27 +349,101 @@ export class ContextBuilder {
     }
 
     /**
-     * Format character card using SillyTavern's actual field structure
-     * Matches the context_story_string template format
+     * Format character card using SillyTavern's getCharacterCardFields() structure
+     * Matches SillyTavern's context_story_string template format:
+     * [Lore Scenario: {{scenario}}]
+     * [Main Lore/Characters: {{description}} Char card: {{personality}}]
+     * {{user}} Persona Sheet / Controlled Avatar [{{persona}}]
+     * 
+     * CRITICAL DISTINCTIONS:
+     * - {{user}} = name1 = User's name (used in persona section)
+     * - {{char}} = name2 = Character's name (this is the CHARACTER card being formatted)
+     * 
+     * The character card fields from getCharacterCardFields() already have {{user}} and {{char}} 
+     * placeholders substituted by SillyTavern's baseChatReplace() via substituteParams()
      */
     formatCharCard(charData) {
+        // Use getCharacterCardFields() if available (preferred method)
+        if (this.context && typeof this.context.getCharacterCardFields === 'function') {
+            try {
+                const cardFields = this.context.getCharacterCardFields();
+                const parts = [];
+
+                // CRITICAL: Follow SillyTavern's template structure order
+                // Note: getCharacterCardFields() already processes fields through baseChatReplace()
+                // which calls substituteParams(name1, name2), so {{user}} and {{char}} are already substituted
+
+                // 1. Scenario section (if present)
+                if (cardFields.scenario) {
+                    parts.push(`[Lore Scenario:\n${cardFields.scenario}]`);
+                }
+
+                // 2. Description and Personality section (Main Lore/Characters)
+                // CRITICAL: These fields describe the CHARACTER ({{char}} = name2)
+                const descriptionParts = [];
+                if (cardFields.description) {
+                    descriptionParts.push(cardFields.description);
+                }
+                if (cardFields.personality) {
+                    descriptionParts.push(`Char card:\n${cardFields.personality}`);
+                }
+                if (descriptionParts.length > 0) {
+                    parts.push(`[Main Lore/Characters:\n${descriptionParts.join('\n\n')}]`);
+                }
+
+                // 3. System prompt (if present)
+                if (cardFields.system) {
+                    parts.push(cardFields.system);
+                }
+
+                // 4. User Persona section ({{user}} Persona Sheet)
+                // CRITICAL: This is the USER's persona ({{user}} = name1), not the character's
+                // The persona field already has {{user}} substituted by SillyTavern
+                if (cardFields.persona) {
+                    // Get name1 ({{user}}) to ensure it's in the header even if persona field doesn't include it
+                    const name1 = this.context?.name1 || '{{user}}';
+                    parts.push(`${name1} Persona Sheet / Controlled Avatar\n[${cardFields.persona}]`);
+                }
+
+                // 5. Message examples
+                if (cardFields.mesExamples) {
+                    parts.push(cardFields.mesExamples);
+                }
+
+                // 6. Jailbreak/post-history instructions
+                if (cardFields.jailbreak) {
+                    parts.push(cardFields.jailbreak);
+                }
+
+                // 7. Additional fields
+                if (cardFields.version) {
+                    parts.push(`Version: ${cardFields.version}`);
+                }
+
+                if (cardFields.charDepthPrompt) {
+                    parts.push(cardFields.charDepthPrompt);
+                }
+
+                if (cardFields.creatorNotes) {
+                    parts.push(cardFields.creatorNotes);
+                }
+
+                return parts.join('\n\n') || 'No character card data available.';
+            } catch (error) {
+                console.warn('[Sidecar AI] Error using getCharacterCardFields(), falling back to direct charData:', error);
+            }
+        }
+
+        // Fallback: Use direct charData if getCharacterCardFields() is not available
         if (!charData) {
             return '';
         }
 
         const parts = [];
 
-        // Follow SillyTavern's context_story_string template order
-        if (charData.anchorBefore) {
-            parts.push(charData.anchorBefore);
-        }
-
-        if (charData.system) {
-            parts.push(charData.system);
-        }
-
-        if (charData.wiBefore) {
-            parts.push(charData.wiBefore);
+        // Fallback order using direct character data fields
+        if (charData.data?.system_prompt) {
+            parts.push(charData.data.system_prompt);
         }
 
         if (charData.description) {
@@ -328,29 +451,19 @@ export class ContextBuilder {
         }
 
         if (charData.personality) {
-            const charName = charData.name || 'Character';
-            parts.push(`${charName}'s personality: ${charData.personality}`);
+            parts.push(charData.personality);
         }
 
-        if (charData.scenario) {
-            parts.push(`Scenario: ${charData.scenario}`);
+        if (charData.scenario || charData.data?.scenario) {
+            parts.push(charData.scenario || charData.data.scenario);
         }
 
-        if (charData.wiAfter) {
-            parts.push(charData.wiAfter);
+        if (charData.data?.post_history_instructions) {
+            parts.push(charData.data.post_history_instructions);
         }
 
-        if (charData.persona) {
-            parts.push(charData.persona);
-        }
-
-        if (charData.anchorAfter) {
-            parts.push(charData.anchorAfter);
-        }
-
-        // Fallback: Include name if available (not in template but useful)
-        if (charData.name && !parts.length) {
-            parts.push(`Name: ${charData.name}`);
+        if (charData.mes_example) {
+            parts.push(charData.mes_example);
         }
 
         return parts.join('\n\n') || 'No character card data available.';
@@ -358,6 +471,8 @@ export class ContextBuilder {
 
     /**
      * Format user card
+     * CRITICAL: This formats the USER card ({{user}} = name1)
+     * This is the user's persona/description, not the character's
      */
     formatUserCard(userData) {
         if (!userData) {
