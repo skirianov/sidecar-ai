@@ -141,6 +141,18 @@ export class EventHandler {
 
                 // Reliability fallback: some ST builds/extensions may not emit message_* events consistently.
                 // GENERATION_ENDED is emitted after the AI response is finalized.
+                // GENERATION_STARTED: hide existing sidecar cards immediately so old cards don't linger during regen/swipe.
+                const generationStartedEvent = event_types.GENERATION_STARTED || 'generation_started';
+                if (generationStartedEvent) {
+                    eventSource.on(generationStartedEvent, () => {
+                        try {
+                            this.resultFormatter?.hideAllSidecarCards?.();
+                        } catch (e) {
+                            // Best-effort UI cleanup
+                        }
+                    });
+                }
+
                 const generationEndedEvent = event_types.GENERATION_ENDED || 'generation_ended';
                 if (generationEndedEvent) {
                     eventSource.on(generationEndedEvent, () => {
