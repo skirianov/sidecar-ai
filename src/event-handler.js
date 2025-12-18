@@ -145,12 +145,24 @@ export class EventHandler {
 
                 // Reliability fallback: some ST builds/extensions may not emit message_* events consistently.
                 // GENERATION_ENDED is emitted after the AI response is finalized.
-                // GENERATION_STARTED: hide existing sidecar cards immediately so old cards don't linger during regen/swipe.
+                // GENERATION_STARTED: clear sidecar UI for the message being generated so old cards don't linger.
+                // IMPORTANT: Do NOT hide containers globally (or even per-message via display:none) here —
+                // hidden containers can remain hidden and make historical sidecars "disappear".
                 const generationStartedEvent = event_types.GENERATION_STARTED || 'generation_started';
                 if (generationStartedEvent) {
                     eventSource.on(generationStartedEvent, () => {
                         try {
-                            this.resultFormatter?.hideAllSidecarCards?.();
+                            const chatLog = this.contextBuilder.getChatLog();
+                            if (!Array.isArray(chatLog) || chatLog.length === 0) return;
+                            const idx = chatLog.length - 1;
+                            const messageElement = this.resultFormatter?.findMessageElement?.(idx) || null;
+                            const sidecarContainer = messageElement?.querySelector?.('.sidecar-container') || null;
+                            if (sidecarContainer) {
+                                // Remove stale cards/loading UI from the previous variant while generation runs.
+                                // Keep the container visible so we can show loading states immediately.
+                                sidecarContainer.innerHTML = '';
+                                sidecarContainer.style.display = '';
+                            }
                         } catch (e) {
                             // Best-effort UI cleanup
                         }
