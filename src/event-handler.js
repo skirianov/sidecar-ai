@@ -113,7 +113,7 @@ export class EventHandler {
                     }
                 });
 
-                // Swipe events: ONLY restore/show UI for the active variant; do NOT trigger new sidecar processing.
+                // Swipe events: ONLY update UI for the active variant; do NOT trigger new sidecar processing.
                 const swipeEvents = [
                     event_types.MESSAGE_SWIPED,
                     event_types.CHAT_MESSAGE_SWIPED,
@@ -130,9 +130,13 @@ export class EventHandler {
                                 ? data
                                 : (typeof data === 'string' && data.trim() !== '' && !Number.isNaN(Number(data)) ? Number(data) : null);
                             if (idx === null) return;
-                            // Restore blocks (if any) for the swiped-to variant and show cards for that message.
-                            // This does not call AI.
-                            this.resultFormatter?.handleMessageSwiped?.(idx, this.addonManager);
+                            // IMPORTANT: SillyTavern may emit message_swiped after the swipe animation completes,
+                            // including after a newly generated swipe variant is rendered. We must not "hide all"
+                            // here or we can make freshly injected cards disappear ("puff").
+                            //
+                            // Use the variant-change handler: it clears only this message's container and restores
+                            // stored sidecars for the currently active swipe_id (no AI calls).
+                            this.resultFormatter?.handleSwipeVariantChange?.(idx, this.addonManager);
                         } catch (e) {
                             // Best-effort UI restoration
                         }
