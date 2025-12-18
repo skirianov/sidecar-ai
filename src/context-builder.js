@@ -190,6 +190,17 @@ export class ContextBuilder {
             parts.push('');
         }
 
+        // CRITICAL: Add placeholder definitions before instruction block
+        // This prevents confusion about {{user}} vs {{char}}
+        const name1 = this.context?.name1 || '{{user}}';
+        const name2 = this.context?.name2 || '{{char}}';
+        parts.push('=== PLACEHOLDER DEFINITIONS (CRITICAL) ===');
+        parts.push(`\`{{user}}\` = ${name1} (Human/Protagonist - controlled by the human user)`);
+        parts.push(`\`{{char}}\` = ${name2} (Character/Deuteragonist - controlled by AI)`);
+        parts.push('When you see `{{user}}` in instructions, it refers to the HUMAN PROTAGONIST.');
+        parts.push('When you see `{{char}}` in instructions, it refers to the AI CHARACTER.');
+        parts.push('');
+
         // User's instruction (the actual prompt) - THIS IS WHAT TO FOLLOW
         if (userPrompt.trim()) {
             parts.push('');
