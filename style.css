@@ -572,14 +572,14 @@
     
     /* CSS Containment - isolate layout, style, and paint */
     contain: layout style paint;
-    
+
     /* Prevent content from affecting outside */
     isolation: isolate;
-    
+
     /* Create new stacking context */
     position: relative;
     z-index: 0;
-    
+
     /* Prevent overflow bleeding */
     overflow: hidden;
 }

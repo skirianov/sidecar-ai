@@ -1909,12 +1909,6 @@ export class ResultFormatter {
             const allContainers = document.querySelectorAll('.sidecar-container');
             let hiddenCount = 0;
             allContainers.forEach(container => {
-                // Skip containers that are marked as restored (actively being used)
-                if (this.isContainerRestored(container)) {
-                    console.log('[Sidecar AI] Skipping hide for restored container');
-                    return;
-                }
-
                 // Skip containers that have excludeMessageId if provided
                 if (excludeMessageId !== null) {
                     const messageElement = container.closest('.mes, .message');
@@ -1985,6 +1979,9 @@ export class ResultFormatter {
             const swipeId = message.swipe_id ?? 0;
 
             console.log(`[Sidecar AI] Message ${messageIndex} (ID: ${messageId}) is now on swipe variant ${swipeId}`);
+
+            // First, hide all sidecar cards globally (but exclude the current message to prevent flicker)
+            this.hideAllSidecarCards(messageId);
 
             // Find the message element (try multiple methods for robustness)
             const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(messageIndex);
