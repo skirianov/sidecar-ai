@@ -82,29 +82,24 @@ export class EventHandler {
             const event_types = this.context?.event_types || this.context?.eventTypes;
 
             if (eventSource && event_types) {
-                // Listen for new messages - try multiple event types
+                // Listen for new messages - try multiple event types.
+                // IMPORTANT: We only PROCESS sidecars when an AI response is complete.
+                // Do NOT use swipe events to trigger processing; swipe can happen before the new message is finalized.
                 const messageEvents = [
                     event_types.MESSAGE_RECEIVED,
                     event_types.MESSAGE_SENT,
-                    // Regenerate/swipe changes typically come through MESSAGE_SWIPED (payload is mesid/chat index)
-                    event_types.MESSAGE_SWIPED,
                     event_types.CHAT_MESSAGE_RECEIVED,
                     event_types.CHAT_MESSAGE_SENT,
-                    event_types.CHAT_MESSAGE_SWIPED,
                     'MESSAGE_RECEIVED',
                     'MESSAGE_SENT',
-                    'MESSAGE_SWIPED',
-                    // Some builds use lowercase event names
-                    'message_swiped'
                 ].filter(Boolean); // Remove undefined values
 
                 messageEvents.forEach(eventType => {
                     if (eventType) {
                         eventSource.on(eventType, (data) => {
                             try {
-                                // For MESSAGE_SENT / MESSAGE_SWIPED, wait a bit to ensure chat array + swipe_id are updated
-                                if (eventType === event_types.MESSAGE_SENT || eventType === 'MESSAGE_SENT' ||
-                                    eventType === event_types.MESSAGE_SWIPED || eventType === 'MESSAGE_SWIPED' || eventType === 'message_swiped') {
+                                // For MESSAGE_SENT, wait a bit to ensure message is in chat array
+                                if (eventType === event_types.MESSAGE_SENT || eventType === 'MESSAGE_SENT') {
                                     setTimeout(() => {
                                         this.handleMessageReceived(data);
                                     }, 150);
@@ -118,6 +113,32 @@ export class EventHandler {
                     }
                 });
 
+                // Swipe events: ONLY restore/show UI for the active variant; do NOT trigger new sidecar processing.
+                const swipeEvents = [
+                    event_types.MESSAGE_SWIPED,
+                    event_types.CHAT_MESSAGE_SWIPED,
+                    'MESSAGE_SWIPED',
+                    'message_swiped',
+                ].filter(Boolean);
+
+                swipeEvents.forEach(eventType => {
+                    if (!eventType) return;
+                    eventSource.on(eventType, (data) => {
+                        try {
+                            // data is expected to be mesid/chat index
+                            const idx = (typeof data === 'number' && Number.isInteger(data))
+                                ? data
+                                : (typeof data === 'string' && data.trim() !== '' && !Number.isNaN(Number(data)) ? Number(data) : null);
+                            if (idx === null) return;
+                            // Restore blocks (if any) for the swiped-to variant and show cards for that message.
+                            // This does not call AI.
+                            this.resultFormatter?.handleMessageSwiped?.(idx, this.addonManager);
+                        } catch (e) {
+                            // Best-effort UI restoration
+                        }
+                    });
+                });
+
                 // Reliability fallback: some ST builds/extensions may not emit message_* events consistently.
                 // GENERATION_ENDED is emitted after the AI response is finalized.
                 const generationEndedEvent = event_types.GENERATION_ENDED || 'generation_ended';
@@ -127,7 +148,10 @@ export class EventHandler {
                             const chatLog = this.contextBuilder.getChatLog();
                             if (Array.isArray(chatLog) && chatLog.length > 0) {
                                 // Run against latest message index (mesid)
-                                this.handleMessageReceived(chatLog.length - 1);
+                                // Delay slightly so ST has time to finalize swipe_info / DOM render
+                                setTimeout(() => {
+                                    this.handleMessageReceived(chatLog.length - 1);
+                                }, 150);
                             }
                         } catch (e) {
                             console.error(`[Sidecar AI] Error in ${generationEndedEvent} fallback:`, e);
@@ -431,6 +455,13 @@ export class EventHandler {
             }
             if (!canonicalAiMessage) {
                 console.warn('[Sidecar AI] Could not resolve canonical AI message after delay, skipping');
+                return;
+            }
+
+            // Never run sidecars on the very first message (index 0).
+            // This avoids firing on initial greeting / chat load behaviors.
+            if (aiMessageId === 0) {
+                console.log('[Sidecar AI] Skipping sidecar processing for first message (index 0)');
                 return;
             }
 
