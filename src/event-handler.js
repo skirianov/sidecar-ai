@@ -14,8 +14,10 @@ export class EventHandler {
         // Reliability: if multiple ST events fire rapidly, don't drop them.
         // We coalesce to "latest event wins" and run it after current processing ends.
         this._pendingMessageEvent = null;
-        // Prevent swipe handling during generation to avoid conflicts
+        // Prevent swipe handling during and after generation to avoid conflicts
         this._isGenerating = false;
+        this._generationEndTime = 0;
+        this._postGenerationIgnoreMs = 2000; // Ignore swipe events for 2 seconds after generation ends
         // Performance: Debounce save operations
         this.saveChatTimeout = null;
         // Prevent double-processing the same message id
@@ -128,8 +130,14 @@ export class EventHandler {
                     if (!eventType) return;
                     eventSource.on(eventType, (data) => {
                         try {
-                            // Skip swipe handling during generation to prevent conflicts
+                            // Skip swipe handling during and shortly after generation to prevent conflicts
                             if (this._isGenerating) {
+                                console.log('[Sidecar AI] Ignoring swipe event during generation');
+                                return;
+                            }
+
+                            const now = Date.now();
+                            if (now - this._generationEndTime < this._postGenerationIgnoreMs) {
                                 return;
                             }
 
@@ -160,14 +168,21 @@ export class EventHandler {
                             const chatLog = this.contextBuilder.getChatLog();
                             if (!Array.isArray(chatLog) || chatLog.length === 0) return;
                             const idx = chatLog.length - 1;
-                            const messageElement = this.resultFormatter?.findMessageElement?.(idx) || null;
-                            if (messageElement) {
-                                // CRITICAL: Remove ALL sidecar containers for this message to prevent
-                                // showing cards from multiple swipe variants
-                                const sidecarContainers = messageElement.querySelectorAll('.sidecar-container');
-                                sidecarContainers.forEach(container => {
-                                    container.remove();
-                                });
+                            const message = chatLog[idx];
+
+                            // Only clear containers if this is a NEW swipe variant being generated
+                            // Check if swipe_id equals swipes.length (new variant) or if swipes array doesn't exist yet
+                            const isNewSwipe = !Array.isArray(message.swipes) || (message.swipe_id ?? 0) === message.swipes.length;
+
+                            if (isNewSwipe) {
+                                const messageElement = this.resultFormatter?.findMessageElement?.(idx) || null;
+                                if (messageElement) {
+                                    // Clear containers only for new swipe variants
+                                    const sidecarContainers = messageElement.querySelectorAll('.sidecar-container');
+                                    sidecarContainers.forEach(container => {
+                                        container.remove();
+                                    });
+                                }
                             }
                         } catch (e) {
                             // Best-effort UI cleanup
@@ -180,6 +195,8 @@ export class EventHandler {
                     eventSource.on(generationEndedEvent, () => {
                         try {
                             this._isGenerating = false;
+                            this._generationEndTime = Date.now();
+                            console.log('[Sidecar AI] Generation ended, swipe events ignored for 2 seconds');
                             const chatLog = this.contextBuilder.getChatLog();
                             if (Array.isArray(chatLog) && chatLog.length > 0) {
                                 // Run against latest message index (mesid)

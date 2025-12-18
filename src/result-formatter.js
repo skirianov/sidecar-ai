@@ -854,34 +854,32 @@ export class ResultFormatter {
                 return false;
             }
 
-            // Check if this message already has sidecar content from a different swipe variant
-            // If so, clear it before injecting new content
+            // CRITICAL: Always clear container if it has content from a different swipe variant
+            // This ensures we never show cards from multiple variants simultaneously
             const existingContainer = messageElement.querySelector('.sidecar-container');
             if (existingContainer) {
-                // Check if the existing content is from a different swipe variant
-                // We do this by checking if there are addon sections that don't match our current variant
                 const addonSections = existingContainer.querySelectorAll('.addon_result_section');
+                let shouldClear = false;
+
                 if (addonSections.length > 0) {
-                    // Check the data attributes or IDs to see if they're from a different variant
-                    // The IDs include the swipe ID: `addon-content-${messageId}-${swipeIdForIds}-${addon.id}`
-                    let hasDifferentVariant = false;
+                    // Check if any section is from a different swipe variant
                     addonSections.forEach(section => {
                         const contentDiv = section.querySelector('.addon_result_content');
                         if (contentDiv && contentDiv.id) {
-                            // Extract swipe ID from the ID: addon-content-{messageId}-{swipeId}-{addonId}
+                            // Extract swipe ID from ID: addon-content-{messageId}-{swipeId}-{addonId}
                             const idParts = contentDiv.id.split('-');
                             if (idParts.length >= 4) {
                                 const existingSwipeId = parseInt(idParts[idParts.length - 2]);
                                 if (!isNaN(existingSwipeId) && existingSwipeId !== swipeIdForIds) {
-                                    hasDifferentVariant = true;
+                                    shouldClear = true;
                                 }
                             }
                         }
                     });
+                }
 
-                    if (hasDifferentVariant) {
-                        existingContainer.innerHTML = '';
-                    }
+                if (shouldClear) {
+                    existingContainer.innerHTML = '';
                 }
             }
 
@@ -1976,88 +1974,70 @@ export class ResultFormatter {
      */
     async handleSwipeVariantChange(messageIndex, addonManager) {
         try {
-            console.log(`[Sidecar AI] Handling swipe variant change for message ${messageIndex}`);
-
             // Validate inputs
             if (typeof messageIndex !== 'number' || messageIndex < 0) {
-                console.warn(`[Sidecar AI] Invalid message index for swipe variant change: ${messageIndex}`);
                 return;
             }
 
             if (!addonManager || typeof addonManager.getAllAddons !== 'function') {
-                console.warn('[Sidecar AI] Invalid addon manager provided to handleSwipeVariantChange');
                 return;
             }
-
 
             // Get the message from chat log
             const chatLog = this.context.chat || this.context.chatLog || this.context.currentChat || [];
             if (!Array.isArray(chatLog) || messageIndex >= chatLog.length) {
-                console.warn(`[Sidecar AI] Message index ${messageIndex} out of bounds for chat log length ${chatLog.length}`);
                 return;
             }
 
             const message = chatLog[messageIndex];
             if (!message) {
-                console.warn(`[Sidecar AI] No message found at index ${messageIndex}`);
                 return;
             }
 
             const messageId = this.getMessageId(message);
             const swipeId = message.swipe_id ?? 0;
 
-            console.log(`[Sidecar AI] Message ${messageIndex} (ID: ${messageId}) is now on swipe variant ${swipeId}`);
+            // CRITICAL: Check if this is a NEW swipe variant being created (like Qvink Memory does)
+            // swipe_id === swipes.length means a new variant was just created
+            const isNewSwipe = Array.isArray(message.swipes) && swipeId === message.swipes.length;
 
-            // Check if this swipe variant has stored results
-            const hasStoredResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults;
-            const hasResults = hasStoredResults && Object.keys(hasStoredResults).length > 0;
-
-            if (hasResults) {
-                // Only hide other containers if we actually have results to show for this variant
-                // This prevents unnecessary hide/show cycles when there are no stored sidecars
-                console.log(`[Sidecar AI] Found ${Object.keys(hasStoredResults).length} stored result(s) for variant ${swipeId}, hiding other containers`);
-                this.hideAllSidecarCards(messageId);
-            } else {
-                console.log(`[Sidecar AI] No stored results for variant ${swipeId}, skipping global hide`);
-            }
-
-            if (!hasResults) {
-                // No stored results, nothing to do
-                return;
-            }
-
-            // Find the message element (try multiple methods for robustness)
+            // Find the message element
             const messageElement = this.findMessageElement(messageId) || this.findMessageElementByIndex(messageIndex);
             if (!messageElement) {
-                console.log(`[Sidecar AI] Message element not found for ID ${messageId} or index ${messageIndex}, DOM may not be ready yet`);
                 return;
             }
 
             // Find or create the sidecar container
             let sidecarContainer = messageElement.querySelector('.sidecar-container');
             if (!sidecarContainer) {
-                // Create container if it doesn't exist
                 sidecarContainer = document.createElement('div');
                 sidecarContainer.className = `sidecar-container sidecar-container-${messageId}`;
-                // Insert at the end of the message element
                 messageElement.appendChild(sidecarContainer);
-                console.log(`[Sidecar AI] Created new sidecar container for message ${messageId}`);
             }
 
-            // CLEAR the container contents completely
-            // This removes any sidecars from the previous variant
+            // If this is a NEW swipe variant, clear the container (new variant has no stored results yet)
+            // Otherwise, clear and restore from stored results
+            if (isNewSwipe) {
+                // New swipe variant - clear container, it will be populated when generation completes
+                sidecarContainer.innerHTML = '';
+                sidecarContainer.style.display = '';
+                return;
+            }
+
+            // Existing swipe variant - clear container and restore stored results
             sidecarContainer.innerHTML = '';
-            sidecarContainer.style.display = ''; // Ensure it's visible
+            sidecarContainer.style.display = '';
             this.markContainerAsRestored(sidecarContainer);
 
-            console.log(`[Sidecar AI] Cleared sidecar container for message ${messageId}, variant ${swipeId}`);
-
-            // Render the stored sidecars for this variant
-            console.log(`[Sidecar AI] Found ${Object.keys(hasStoredResults).length} stored sidecar(s) for variant ${swipeId}`);
+            // Check if this swipe variant has stored results
+            const hasStoredResults = message.swipe_info?.[swipeId]?.extra?.sidecarResults;
+            if (!hasStoredResults || Object.keys(hasStoredResults).length === 0) {
+                // No stored results for this variant, leave container empty
+                return;
+            }
 
             // Restore sidecars for this variant
             const allAddons = addonManager.getAllAddons();
-
             for (const addon of allAddons) {
                 if (!addon.enabled) continue;
 
@@ -2070,8 +2050,7 @@ export class ResultFormatter {
                 }
             }
 
-            // Ensure inline projection + display_text are consistent after restoration.
-            // This keeps the UI clean even if message.mes contains an inline region.
+            // Ensure inline projection + display_text are consistent after restoration
             this.applyInlineSidecarResultsToMessage(message);
         } catch (error) {
             console.error('[Sidecar AI] Error handling swipe variant change:', error);
