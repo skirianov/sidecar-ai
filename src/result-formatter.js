@@ -1397,6 +1397,28 @@ export class ResultFormatter {
             const extra = message.swipe_info[swipeId].extra;
             const sidecarResults = extra.sidecarResults || message.extra?.sidecarResults || {};
 
+            // If an addon is configured for inline mode but the stored result doesn't include inlineMode
+            // (or the addon changed), keep metadata aligned with addon config so inline projection works.
+            // This is best-effort and only updates the in-memory message object; persistence is handled elsewhere.
+            if (sidecarResults && typeof sidecarResults === 'object') {
+                for (const [addonId, stored] of Object.entries(sidecarResults)) {
+                    if (!stored || typeof stored !== 'object') continue;
+                    // If saved result doesn't have inlineMode, fall back to the currently configured addon inlineMode.
+                    if (stored.inlineMode === undefined || stored.inlineMode === null || stored.inlineMode === '') {
+                        try {
+                            const currentAddon = (window?.addOnsExtension?.addonManager?.getAddon)
+                                ? window.addOnsExtension.addonManager.getAddon(addonId)
+                                : null;
+                            if (currentAddon?.inlineMode) {
+                                stored.inlineMode = currentAddon.inlineMode;
+                            }
+                        } catch {
+                            // Ignore: best-effort only
+                        }
+                    }
+                }
+            }
+
             // Helpers
             const startMarker = '<!-- sidecar-inline:start -->';
             const endMarker = '<!-- sidecar-inline:end -->';
@@ -1419,7 +1441,14 @@ export class ResultFormatter {
             // Collect inline-enabled results for this swipe variant.
             const inlineEntries = Object.entries(sidecarResults || {})
                 .map(([id, stored]) => ({ id, stored }))
-                .filter(({ stored }) => stored && typeof stored === 'object' && (stored.inlineMode && stored.inlineMode !== 'off') && typeof stored.result === 'string' && stored.result.length > 0);
+                .filter(({ stored }) => {
+                    if (!stored || typeof stored !== 'object') return false;
+                    if (typeof stored.result !== 'string' || stored.result.length === 0) return false;
+                    // Back-compat: older stored results might not have inlineMode saved.
+                    // Treat missing inlineMode as "off" (do not inline).
+                    const mode = stored.inlineMode ?? 'off';
+                    return mode !== 'off';
+                });
 
             // Build inline region (bounded and replaceable).
             let inlineRegion = '';
@@ -1449,10 +1478,11 @@ export class ResultFormatter {
                 message.swipes[swipeId] = newMes;
             }
 
-            // Keep UI clean: render base text, but keep full text in message.mes for context.
-            extra.display_text = base;
-            if (!message.extra) message.extra = {};
-            message.extra.display_text = base;
+            // IMPORTANT:
+            // SillyTavern's renderer prefers `message.extra.display_text` when present.
+            // Setting it hides the inline region visually (and can confuse users into thinking
+            // inline injection "didn't work"). We keep inline projection visible by default.
+            // If we want a "UI clean" mode later, we can reintroduce display_text behind a setting.
 
             if (typeof this.context?.updateMessageBlock === 'function' && typeof messageId === 'number') {
                 this.context.updateMessageBlock(messageId, message, { rerenderMessage: true });
