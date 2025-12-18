@@ -128,10 +128,8 @@ export class EventHandler {
                     if (!eventType) return;
                     eventSource.on(eventType, (data) => {
                         try {
-                            console.log(`[Sidecar AI] Received ${eventType} event with data:`, data);
                             // Skip swipe handling during generation to prevent conflicts
                             if (this._isGenerating) {
-                                console.log('[Sidecar AI] Skipping swipe event during generation (_isGenerating = true)');
                                 return;
                             }
 
@@ -139,17 +137,12 @@ export class EventHandler {
                             const idx = (typeof data === 'number' && Number.isInteger(data))
                                 ? data
                                 : (typeof data === 'string' && data.trim() !== '' && !Number.isNaN(Number(data)) ? Number(data) : null);
-                            if (idx === null) {
-                                console.log('[Sidecar AI] Invalid swipe event data, skipping');
-                                return;
-                            }
+                            if (idx === null) return;
 
-                            console.log(`[Sidecar AI] Processing swipe event for message index: ${idx}`);
                             // Handle swipe events directly
                             this.resultFormatter?.handleSwipeVariantChange?.(idx, this.addonManager);
                         } catch (e) {
                             // Best-effort UI restoration
-                            console.error('[Sidecar AI] Error handling swipe event:', e);
                         }
                     });
                 });
@@ -168,12 +161,13 @@ export class EventHandler {
                             if (!Array.isArray(chatLog) || chatLog.length === 0) return;
                             const idx = chatLog.length - 1;
                             const messageElement = this.resultFormatter?.findMessageElement?.(idx) || null;
-                            const sidecarContainer = messageElement?.querySelector?.('.sidecar-container') || null;
-                            if (sidecarContainer) {
-                                // Remove stale cards/loading UI from the previous variant while generation runs.
-                                // Keep the container visible so we can show loading states immediately.
-                                sidecarContainer.innerHTML = '';
-                                sidecarContainer.style.display = '';
+                            if (messageElement) {
+                                // CRITICAL: Remove ALL sidecar containers for this message to prevent
+                                // showing cards from multiple swipe variants
+                                const sidecarContainers = messageElement.querySelectorAll('.sidecar-container');
+                                sidecarContainers.forEach(container => {
+                                    container.remove();
+                                });
                             }
                         } catch (e) {
                             // Best-effort UI cleanup
@@ -313,17 +307,14 @@ export class EventHandler {
      * Handle message received event
      */
     async handleMessageReceived(data) {
-        console.log(`[Sidecar AI] handleMessageReceived called with data:`, data);
         if (this.isProcessing) {
             // Reliability: don't drop the event; coalesce and run after current finishes.
             this._pendingMessageEvent = data;
-            console.log('[Sidecar AI] Already processing, queued latest event');
             return;
         }
 
         try {
             this.isProcessing = true;
-            console.log('[Sidecar AI] Message received event processing started', data);
 
             const chatLog = this.contextBuilder.getChatLog();
             const { chatIndex, message: resolvedMessage } = this.resolveMessageRefFromEvent(data);

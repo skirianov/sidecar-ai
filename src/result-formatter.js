@@ -829,7 +829,6 @@ export class ResultFormatter {
      */
     injectIntoDropdown(addon, formattedResult, messageId = null, existingElement = null) {
         try {
-            console.log(`[Sidecar AI] injectIntoDropdown called for addon: ${addon?.name}, messageId: ${messageId}`);
             // Use provided messageId or get from latest message
             if (!messageId) {
                 // Best-effort fallback: use latest AI message element's mesid or last chat index.
@@ -853,6 +852,37 @@ export class ResultFormatter {
             if (!messageElement) {
                 console.warn(`[Sidecar AI] Message element not found for dropdown injection (ID: ${messageId})`);
                 return false;
+            }
+
+            // Check if this message already has sidecar content from a different swipe variant
+            // If so, clear it before injecting new content
+            const existingContainer = messageElement.querySelector('.sidecar-container');
+            if (existingContainer) {
+                // Check if the existing content is from a different swipe variant
+                // We do this by checking if there are addon sections that don't match our current variant
+                const addonSections = existingContainer.querySelectorAll('.addon_result_section');
+                if (addonSections.length > 0) {
+                    // Check the data attributes or IDs to see if they're from a different variant
+                    // The IDs include the swipe ID: `addon-content-${messageId}-${swipeIdForIds}-${addon.id}`
+                    let hasDifferentVariant = false;
+                    addonSections.forEach(section => {
+                        const contentDiv = section.querySelector('.addon_result_content');
+                        if (contentDiv && contentDiv.id) {
+                            // Extract swipe ID from the ID: addon-content-{messageId}-{swipeId}-{addonId}
+                            const idParts = contentDiv.id.split('-');
+                            if (idParts.length >= 4) {
+                                const existingSwipeId = parseInt(idParts[idParts.length - 2]);
+                                if (!isNaN(existingSwipeId) && existingSwipeId !== swipeIdForIds) {
+                                    hasDifferentVariant = true;
+                                }
+                            }
+                        }
+                    });
+
+                    if (hasDifferentVariant) {
+                        existingContainer.innerHTML = '';
+                    }
+                }
             }
 
             // Performance: Check cache for sidecar container
@@ -1909,16 +1939,13 @@ export class ResultFormatter {
         try {
             const allContainers = document.querySelectorAll('.sidecar-container');
             let hiddenCount = 0;
-            console.log(`[Sidecar AI] hideAllSidecarCards called with excludeMessageId: ${excludeMessageId}, found ${allContainers.length} containers`);
-            allContainers.forEach((container, index) => {
+            allContainers.forEach(container => {
                 // Skip containers that have excludeMessageId if provided
                 if (excludeMessageId !== null) {
                     const messageElement = container.closest('.mes, .message');
                     if (messageElement) {
                         const mesid = messageElement.getAttribute('mesid');
-                        console.log(`[Sidecar AI] Container ${index}: mesid=${mesid}, excludeMessageId=${excludeMessageId}`);
                         if (mesid && (mesid === excludeMessageId.toString() || parseInt(mesid) === excludeMessageId)) {
-                            console.log(`[Sidecar AI] Skipping hide for active message ${excludeMessageId}`);
                             return;
                         }
                     }
@@ -1926,14 +1953,10 @@ export class ResultFormatter {
 
                 // Use display: none instead of remove() so we can restore later
                 if (container.style.display !== 'none') {
-                    console.log(`[Sidecar AI] Hiding container ${index}`);
                     container.style.display = 'none';
                     hiddenCount++;
                 }
             });
-            if (hiddenCount > 0) {
-                console.log(`[Sidecar AI] Hid ${hiddenCount} sidecar container(s)`);
-            }
             return hiddenCount;
         } catch (error) {
             console.error('[Sidecar AI] Error hiding all sidecar cards:', error);
@@ -2062,7 +2085,6 @@ export class ResultFormatter {
      */
     showSidecarCardsForMessage(messageId) {
         try {
-            console.log(`[Sidecar AI] showSidecarCardsForMessage called with messageId: ${messageId}`);
             // If messageId is a number (index), get the actual message from chat log
             let targetMessageId = messageId;
             if (typeof messageId === 'number') {
@@ -2079,29 +2101,21 @@ export class ResultFormatter {
             // Find the message element (try multiple methods for robustness)
             const messageElement = this.findMessageElement(targetMessageId) || this.findMessageElementByIndex(typeof messageId === 'number' ? messageId : null);
             if (!messageElement) {
-                console.log(`[Sidecar AI] Message element not found for ID ${targetMessageId}, skipping show operation`);
                 return 0;
             }
 
             // Find all sidecar containers for this message
             const containers = messageElement.querySelectorAll('.sidecar-container');
-            console.log(`[Sidecar AI] Found ${containers.length} containers for message ${targetMessageId}`);
             let shownCount = 0;
-            containers.forEach((container, index) => {
-                console.log(`[Sidecar AI] Container ${index}: display=${container.style.display}, hasContent=${!!container.innerHTML.trim()}`);
+            containers.forEach(container => {
                 // Only show if it's actually hidden and has content (prevent showing empty containers)
                 if (container.style.display === 'none' && container.innerHTML.trim()) {
                     container.style.display = '';
                     shownCount++;
                     // Mark as restored to protect from cleanup
                     this.markContainerAsRestored(container);
-                    console.log(`[Sidecar AI] Showed sidecar container for message ${targetMessageId}`);
                 }
             });
-
-            if (shownCount > 0) {
-                console.log(`[Sidecar AI] Showed ${shownCount} sidecar container(s) for message ${targetMessageId}`);
-            }
 
             return shownCount;
         } catch (error) {
