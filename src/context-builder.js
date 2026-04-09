@@ -89,8 +89,6 @@ export class ContextBuilder {
         const context = {
             lastMessages: this.formatMessages(lastMessages),
             addonHistory: addonHistory,
-            charCard: (settings.includeCharCard !== false) ? this.formatCharCard(charData) : '',
-            userCard: (settings.includeUserCard !== false) ? this.formatUserCard(userData) : '',
             worldCard: (settings.includeWorldCard !== false) ? this.formatWorldCard(worldData) : '',
             currentMessage: this.getCurrentMessage(chatLog)
         };
@@ -183,17 +181,23 @@ export class ContextBuilder {
         }
 
         // Include character card if enabled
-        if ((settings.includeCharCard !== false) && context.charCard) {
-            parts.push('=== Character Card (REFERENCE ONLY) ===');
-            parts.push(context.charCard);
-            parts.push('');
+        if (settings.includeCharCard !== false) {
+            const charCard = this.formatCharCard(this.getCharData());
+            if (charCard) {
+                parts.push('=== Character Card (REFERENCE ONLY) ===');
+                parts.push(charCard);
+                parts.push('');
+            }
         }
 
         // Include user card if enabled
-        if ((settings.includeUserCard !== false) && context.userCard) {
-            parts.push('=== User Card (REFERENCE ONLY) ===');
-            parts.push(context.userCard);
-            parts.push('');
+        if (settings.includeUserCard !== false) {
+            const userCard = this.formatUserCard(this.getUserData());
+            if (userCard) {
+                parts.push('=== User Card (REFERENCE ONLY) ===');
+                parts.push(userCard);
+                parts.push('');
+            }
         }
 
         // Include world card if enabled
