@@ -14,6 +14,11 @@ export class ContextBuilder {
      * Start a new request cycle (clears previous cache)
      */
     startRequestCycle() {
+        // Refresh context on every cycle so name1, name2, and characterId reflect
+        // the currently selected character/persona, not the one active at startup.
+        if (typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function') {
+            this.context = SillyTavern.getContext();
+        }
         this._requestCache = {
             chatLog: null,
             charData: null,
@@ -551,12 +556,11 @@ export class ContextBuilder {
             return this._requestCache.userData;
         }
 
-        let userData = null;
-        if (this.context.user) {
-            userData = this.context.user;
-        } else if (this.context.userData) {
-            userData = this.context.userData;
-        }
+        // SillyTavern's context has no .user or .userData field.
+        // User name is context.name1; persona description is context.powerUserSettings.persona_description.
+        const name = this.context.name1;
+        const description = this.context.powerUserSettings?.persona_description;
+        const userData = (name || description) ? { name, description } : null;
 
         // Cache result
         if (this._requestCache) {
