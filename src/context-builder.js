@@ -182,7 +182,7 @@ export class ContextBuilder {
 
         // Include character card if enabled
         if (settings.includeCharCard !== false) {
-            const charCard = this.formatCharCard(this.getCharData());
+            const charCard = this.formatCharCard();
             if (charCard) {
                 parts.push('=== Character Card (REFERENCE ONLY) ===');
                 parts.push(charCard);
@@ -367,87 +367,62 @@ export class ContextBuilder {
      * Placeholders are escaped with backticks so they appear literally in the prompt
      * and the AI can clearly distinguish between user and character information
      */
-    formatCharCard(charData) {
-        // CRITICAL: Get RAW character data BEFORE substitution to preserve {{user}} and {{char}} placeholders
-        // getCharacterCardFields() already substitutes placeholders, so we need raw data
-        const rawCharData = charData || this.getCharData();
+    formatCharCard() {
+        try {
+            // Use SillyTavern's official API — it uses the live this_chid binding so it
+            // always reflects the currently selected character, regardless of when
+            // this.context was snapshotted.
+            const fields = typeof this.context?.getCharacterCardFields === 'function'
+                ? this.context.getCharacterCardFields()
+                : null;
 
-        if (rawCharData && this.context) {
-            try {
-                const parts = [];
-
-                // CRITICAL: Format with escaped placeholders so AI sees them literally
-                // Use backticks to escape {{user}} and {{char}} so they won't be replaced
-                // Get RAW fields before any substitution happens
-
-                // 1. User Persona section: `{{user}}` - {{persona}}
-                // CRITICAL: This is the USER's persona ({{user}} = name1)
-                // Get persona from power_user settings (raw, before substitution)
-                const rawPersona = this.context.powerUserSettings?.persona_description;
-                if (rawPersona && rawPersona.trim()) {
-                    // Escape the placeholder with backticks so it appears literally
-                    parts.push(`\`{{user}}\` - ${rawPersona.trim()}`);
-                }
-
-                // 2. Character Description section: `{{char}}` - {{description}}
-                // CRITICAL: This is the CHARACTER's description ({{char}} = name2)
-                // Get RAW description before substitution
-                // NOTE: Removed personality field as requested
-                const rawDescription = rawCharData.description;
-                if (rawDescription && rawDescription.trim()) {
-                    // Escape the placeholder with backticks so it appears literally
-                    parts.push(`\`{{char}}\` - ${rawDescription.trim()}`);
-                }
-
-                // 3. Scenario section (if present) - get raw scenario
-                const rawScenario = rawCharData.scenario || rawCharData.data?.scenario;
-                if (rawScenario && rawScenario.trim()) {
-                    parts.push(`[Lore Scenario:\n${rawScenario.trim()}]`);
-                }
-
-                // 4. System prompt (if present) - get raw system prompt
-                const rawSystem = rawCharData.data?.system_prompt;
-                if (rawSystem && rawSystem.trim()) {
-                    parts.push(rawSystem.trim());
-                }
-
-                // 5. Message examples - get raw mes_example
-                const rawMesExamples = rawCharData.mes_example;
-                if (rawMesExamples && rawMesExamples.trim()) {
-                    parts.push(rawMesExamples.trim());
-                }
-
-                // 6. Jailbreak/post-history instructions - get raw post_history_instructions
-                const rawJailbreak = rawCharData.data?.post_history_instructions;
-                if (rawJailbreak && rawJailbreak.trim()) {
-                    parts.push(rawJailbreak.trim());
-                }
-
-                // 7. Additional fields - get raw data
-                const rawVersion = rawCharData.data?.character_version;
-                if (rawVersion) {
-                    parts.push(`Version: ${rawVersion}`);
-                }
-
-                const rawCharDepthPrompt = rawCharData.data?.extensions?.depth_prompt?.prompt;
-                if (rawCharDepthPrompt && rawCharDepthPrompt.trim()) {
-                    parts.push(rawCharDepthPrompt.trim());
-                }
-
-                const rawCreatorNotes = rawCharData.data?.creator_notes;
-                if (rawCreatorNotes && rawCreatorNotes.trim()) {
-                    parts.push(rawCreatorNotes.trim());
-                }
-
-                return parts.join('\n\n') || 'No character card data available.';
-            } catch (error) {
-                console.warn('[Sidecar AI] Error formatting character card:', error);
-                // Fall through to return empty string if error occurs
+            if (!fields) {
+                return '';
             }
-        }
 
-        // If we get here, either no rawCharData or no context
-        return '';
+            const parts = [];
+
+            if (fields.persona?.trim()) {
+                parts.push(`\`{{user}}\` - ${fields.persona.trim()}`);
+            }
+
+            if (fields.description?.trim()) {
+                parts.push(`\`{{char}}\` - ${fields.description.trim()}`);
+            }
+
+            if (fields.scenario?.trim()) {
+                parts.push(`[Lore Scenario:\n${fields.scenario.trim()}]`);
+            }
+
+            if (fields.system?.trim()) {
+                parts.push(fields.system.trim());
+            }
+
+            if (fields.mesExamples?.trim()) {
+                parts.push(fields.mesExamples.trim());
+            }
+
+            if (fields.jailbreak?.trim()) {
+                parts.push(fields.jailbreak.trim());
+            }
+
+            if (fields.version) {
+                parts.push(`Version: ${fields.version}`);
+            }
+
+            if (fields.charDepthPrompt?.trim()) {
+                parts.push(fields.charDepthPrompt.trim());
+            }
+
+            if (fields.creatorNotes?.trim()) {
+                parts.push(fields.creatorNotes.trim());
+            }
+
+            return parts.join('\n\n') || '';
+        } catch (error) {
+            console.warn('[Sidecar AI] Error formatting character card:', error);
+            return '';
+        }
     }
 
     /**
