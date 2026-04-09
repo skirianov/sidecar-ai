@@ -165,7 +165,7 @@ async function loadModules() {
 
         // Initialize components
         const addonManager = new AddonManager(context);
-        const contextBuilder = new ContextBuilder(context);
+        const contextBuilder = new ContextBuilder(context, getContext);
         const aiClient = new AIClient(context);
         const resultFormatter = new ResultFormatter(context);
         const eventHandler = new EventHandler(

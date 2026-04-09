@@ -4,8 +4,11 @@
  */
 
 export class ContextBuilder {
-    constructor(context) {
+    constructor(context, getContextFn) {
         this.context = context;
+        // Store the getContext function so startRequestCycle can refresh primitive
+        // fields (name1, name2, characterId) without relying on a global lookup.
+        this._getContext = getContextFn || null;
         // Performance: Request-scoped cache for context lookups
         this._requestCache = null;
     }
@@ -16,8 +19,9 @@ export class ContextBuilder {
     startRequestCycle() {
         // Refresh context on every cycle so name1, name2, and characterId reflect
         // the currently selected character/persona, not the one active at startup.
-        if (typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function') {
-            this.context = SillyTavern.getContext();
+        if (this._getContext) {
+            const fresh = this._getContext();
+            if (fresh) this.context = fresh;
         }
         this._requestCache = {
             chatLog: null,
