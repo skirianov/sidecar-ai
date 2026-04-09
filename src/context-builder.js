@@ -22,6 +22,10 @@ export class ContextBuilder {
         if (this._getContext) {
             const fresh = this._getContext();
             if (fresh) this.context = fresh;
+        } else if (typeof SillyTavern !== 'undefined' && typeof SillyTavern.getContext === 'function') {
+            // Fallback: module was cached without getContextFn reference
+            const fresh = SillyTavern.getContext();
+            if (fresh) this.context = fresh;
         }
         this._requestCache = {
             chatLog: null,
@@ -85,9 +89,9 @@ export class ContextBuilder {
         const context = {
             lastMessages: this.formatMessages(lastMessages),
             addonHistory: addonHistory,
-            charCard: settings.includeCharCard ? this.formatCharCard(charData) : '',
-            userCard: settings.includeUserCard ? this.formatUserCard(userData) : '',
-            worldCard: settings.includeWorldCard ? this.formatWorldCard(worldData) : '',
+            charCard: (settings.includeCharCard !== false) ? this.formatCharCard(charData) : '',
+            userCard: (settings.includeUserCard !== false) ? this.formatUserCard(userData) : '',
+            worldCard: (settings.includeWorldCard !== false) ? this.formatWorldCard(worldData) : '',
             currentMessage: this.getCurrentMessage(chatLog)
         };
 
@@ -179,21 +183,21 @@ export class ContextBuilder {
         }
 
         // Include character card if enabled
-        if (settings.includeCharCard && context.charCard) {
+        if ((settings.includeCharCard !== false) && context.charCard) {
             parts.push('=== Character Card (REFERENCE ONLY) ===');
             parts.push(context.charCard);
             parts.push('');
         }
 
         // Include user card if enabled
-        if (settings.includeUserCard && context.userCard) {
+        if ((settings.includeUserCard !== false) && context.userCard) {
             parts.push('=== User Card (REFERENCE ONLY) ===');
             parts.push(context.userCard);
             parts.push('');
         }
 
         // Include world card if enabled
-        if (settings.includeWorldCard && context.worldCard) {
+        if ((settings.includeWorldCard !== false) && context.worldCard) {
             parts.push('=== World Card (REFERENCE ONLY) ===');
             parts.push(context.worldCard);
             parts.push('');
